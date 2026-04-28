@@ -16,14 +16,22 @@ class TestAutoencoder3D:
 
     def test_forward_output_shape_matches_input(self):
         """前向传播输出 shape 应与输入相同."""
-        model = Autoencoder3D(encoder_name="swin_unetr", freeze_encoder=True)
+        model = Autoencoder3D(
+            encoder_name="swin_unetr",
+            freeze_encoder=True,
+            pretrained=False,
+        )
         x = torch.randn(2, 1, 64, 64, 64)
         out = model(x)
         assert out.shape == x.shape
 
     def test_encoder_frozen_when_freeze_encoder_true(self):
         """freeze_encoder=True 时编码器参数应被冻结."""
-        model = Autoencoder3D(encoder_name="swin_unetr", freeze_encoder=True)
+        model = Autoencoder3D(
+            encoder_name="swin_unetr",
+            freeze_encoder=True,
+            pretrained=False,
+        )
         encoder_params = list(model.encoder.parameters())
         assert len(encoder_params) > 0
         for p in encoder_params:
@@ -31,27 +39,43 @@ class TestAutoencoder3D:
 
     def test_encoder_unfrozen_when_freeze_encoder_false(self):
         """freeze_encoder=False 时编码器参数应可训练."""
-        model = Autoencoder3D(encoder_name="swin_unetr", freeze_encoder=False)
+        model = Autoencoder3D(
+            encoder_name="swin_unetr",
+            freeze_encoder=False,
+            pretrained=False,
+        )
         for p in model.encoder.parameters():
             assert p.requires_grad
 
     def test_reconstruction_head_output_channels(self):
         """重建头输出通道数应为 1."""
-        model = Autoencoder3D(encoder_name="swin_unetr", freeze_encoder=True)
+        model = Autoencoder3D(
+            encoder_name="swin_unetr",
+            freeze_encoder=True,
+            pretrained=False,
+        )
         x = torch.randn(1, 1, 64, 64, 64)
         out = model(x)
         assert out.shape[1] == 1
 
     def test_batch_size_two_runs(self):
         """batch size=2 时应正常运行."""
-        model = Autoencoder3D(encoder_name="swin_unetr", freeze_encoder=True)
+        model = Autoencoder3D(
+            encoder_name="swin_unetr",
+            freeze_encoder=True,
+            pretrained=False,
+        )
         x = torch.randn(2, 1, 64, 64, 64)
         out = model(x)
         assert out.shape == torch.Size([2, 1, 64, 64, 64])
 
     def test_decoder_parameters_require_grad(self):
         """解码器参数应始终可训练."""
-        model = Autoencoder3D(encoder_name="swin_unetr", freeze_encoder=True)
+        model = Autoencoder3D(
+            encoder_name="swin_unetr",
+            freeze_encoder=True,
+            pretrained=False,
+        )
         for p in model.decoder.parameters():
             assert p.requires_grad
         for p in model.reconstruction_head.parameters():
@@ -59,7 +83,11 @@ class TestAutoencoder3D:
 
     def test_gradient_flow_through_decoder(self):
         """梯度应能流经解码器到可训练参数."""
-        model = Autoencoder3D(encoder_name="swin_unetr", freeze_encoder=True)
+        model = Autoencoder3D(
+            encoder_name="swin_unetr",
+            freeze_encoder=True,
+            pretrained=False,
+        )
         x = torch.randn(1, 1, 64, 64, 64)
         out = model(x)
         loss = out.sum()

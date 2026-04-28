@@ -12,6 +12,7 @@ test_download_api.py: 下载 API 契约测试，防止 CLI 入口与 data.downlo
 test_losses.py: 损失函数测试，验证 WeightedMSELoss 权重计算与反向传播
 test_metrics.py: 评估指标测试，验证 Dice/AUC/F1、连续分数阈值化与检测入口数组收集
 test_preprocess.py: 预处理测试，验证 HU 窗口、重采样、归一化、patch 提取与健康筛选
+test_weights.py: 权重缓存测试，验证 MONAI SSL 预训练权重落到项目内 `.cache/monai/pretrained` 并通过下载入口装载
 
 法则: 成员完整·一行一文件·父级链接·技术词前置
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
