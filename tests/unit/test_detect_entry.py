@@ -7,6 +7,7 @@
 
 import numpy as np
 from omegaconf import OmegaConf
+from omegaconf import ListConfig
 
 
 def test_detect_evaluation_arrays_accept_numpy_outputs():
@@ -66,7 +67,11 @@ def test_detect_checkpoint_without_encoder_name_uses_supported_default(monkeypat
     monkeypatch.setattr(detect, "Autoencoder3D", DummyModel)
     monkeypatch.setattr(detect, "SlidingWindowDetector", DummyDetector)
     monkeypatch.setattr(detect, "setup_logging", lambda: None)
-    monkeypatch.setattr(detect.torch, "load", lambda path, map_location: {"state_dict": {"weight": 1}})
+    monkeypatch.setattr(
+        detect.torch,
+        "load",
+        lambda path, map_location: {"state_dict": {"model.weight": 1}},
+    )
 
     cfg = OmegaConf.create(
         {
@@ -91,3 +96,19 @@ def test_detect_checkpoint_without_encoder_name_uses_supported_default(monkeypat
     assert captured["pretrained"] is False
     assert captured["state_dict"] == {"weight": 1}
     assert captured["eval_called"] is True
+
+
+def test_detect_strips_lightning_model_prefix_from_state_dict():
+    from scripts.detect import _normalize_state_dict_keys
+
+    assert _normalize_state_dict_keys({"model.weight": 1, "bias": 2}) == {"weight": 1, "bias": 2}
+    assert _normalize_state_dict_keys({"weight": 1}) == {"weight": 1}
+
+
+def test_detect_resolves_stride_from_scalar_or_sequence():
+    from scripts.detect import _resolve_stride
+
+    assert _resolve_stride(32) == 32
+    assert _resolve_stride([32, 32, 32]) == 32
+    assert _resolve_stride((16, 16, 16)) == 16
+    assert _resolve_stride(ListConfig([8, 8, 8])) == 8

@@ -37,7 +37,7 @@ _ensure_matplotlib_cache_env()
 
 import hydra
 import numpy as np
-from omegaconf import DictConfig, OmegaConf
+from omegaconf import DictConfig, ListConfig, OmegaConf
 import torch
 
 from src.models.autoencoder import Autoencoder3D
@@ -76,6 +76,27 @@ def _resolve_encoder_name(checkpoint: dict[str, Any]) -> str:
     return checkpoint.get("encoder_name") or SUPPORTED_ENCODER_NAME
 
 
+def _normalize_state_dict_keys(state_dict: dict[str, Any]) -> dict[str, Any]:
+    """兼容 Lightning 保存的 model.* 前缀 checkpoint。"""
+    if not state_dict:
+        return state_dict
+    if any(key.startswith("model.") for key in state_dict):
+        return {
+            key[len("model.") :] if key.startswith("model.") else key: value
+            for key, value in state_dict.items()
+        }
+    return state_dict
+
+
+def _resolve_stride(stride: Any) -> int:
+    """兼容 Hydra 列表配置与标量配置，收敛为单个滑窗步长。"""
+    if isinstance(stride, (list, tuple, ListConfig)):
+        if not stride:
+            raise ValueError("stride must not be empty")
+        return int(stride[0])
+    return int(stride)
+
+
 @hydra.main(
     config_path="../configs",
     config_name="detect",
@@ -112,13 +133,15 @@ def main(cfg: DictConfig) -> None:
     # --------------------------------------------------
     print(f"Loading checkpoint from: {cfg.model.checkpoint_path}")
     checkpoint = torch.load(cfg.model.checkpoint_path, map_location=device)
+    state_dict = checkpoint.get("state_dict", checkpoint)
+    state_dict = _normalize_state_dict_keys(state_dict)
 
     # 从 checkpoint 中恢复模型结构参数
     model = Autoencoder3D(
         encoder_name=_resolve_encoder_name(checkpoint),
         pretrained=False,
     )
-    model.load_state_dict(checkpoint.get("state_dict", checkpoint))
+    model.load_state_dict(state_dict)
     model.to(device)
     model.eval()
 
@@ -128,7 +151,7 @@ def main(cfg: DictConfig) -> None:
     detector = SlidingWindowDetector(
         model=model,
         patch_size=cfg.detection.patch_size,
-        stride=cfg.detection.stride,
+        stride=_resolve_stride(cfg.detection.stride),
         batch_size=cfg.detection.batch_size,
         device=device,
     )
@@ -147,7 +170,7 @@ def main(cfg: DictConfig) -> None:
         result["save_fn"](anomaly_map, out_nii)
 
         # 可视化中间切片
-        mid_z = anomaly_map.shape[2] // 2
+        mid_z = min(ct_volume.shape[0], anomaly_map.shape[0]) // 2
         viz_path = os.path.join(cfg.data.output_dir, f"{case_id}_viz.png")
         visualize_anomaly_map(ct_volume, anomaly_map, mid_z, save_path=viz_path)
 

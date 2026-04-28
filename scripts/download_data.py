@@ -44,7 +44,7 @@ def parse_args() -> argparse.Namespace:
         "--subset",
         type=int,
         default=None,
-        help="Download only a subset of N scans (for quick testing)",
+        help="Download only a subset of N CT volume pairs; None defaults to 1 real pair",
     )
     parser.add_argument(
         "--no-extract",

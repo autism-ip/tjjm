@@ -1,16 +1,16 @@
 """
- * [INPUT]: 依赖 pathlib, subprocess, zipfile, pandas
+ * [INPUT]: 依赖 pathlib, pandas, kaggle.api.kaggle_api_extended.KaggleApi
  * [OUTPUT]: 对外提供 Luna16Downloader 类、download_luna16/download_lidc_idri CLI 函数
- * [POS]: data/ 的数据获取器, 负责 LUNA16 下载/解压/校验与 CLI 下载契约
+ * [POS]: data/ 的数据获取器, 负责 LUNA16 文件级下载/校验与 CLI 下载契约
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 """
 
-import subprocess
 import zipfile
 from pathlib import Path
-from typing import List, Tuple
+from typing import Iterable, List, Tuple
 
 import pandas as pd
+from kaggle.api.kaggle_api_extended import KaggleApi
 
 
 __all__ = [
@@ -30,8 +30,8 @@ class Luna16Downloader:
     支持 Kaggle API 自动下载或手动放置后校验.
     """
 
-    KAGGLE_DATASET = "eliasmarcon/luna-16"
-    EXPECTED_FILES = ["annotations.csv", "candidates.csv"]
+    KAGGLE_DATASET = "namnguyenhoang1/luna16-full-dataset-until-23-feb-2026"
+    ANNOTATIONS_FILE = "annotations.csv"
 
     def __init__(self, raw_dir: Path, processed_dir: Path):
         """
@@ -48,16 +48,22 @@ class Luna16Downloader:
     # Public API
     # --------------------------------------------------------
 
-    def download(self, use_kaggle: bool = True, extract: bool = True) -> None:
+    def download(
+        self,
+        use_kaggle: bool = True,
+        extract: bool = True,
+        subset: int | None = None,
+    ) -> None:
         """
-        下载 LUNA16 数据集.
+        下载 LUNA16 真实 CT 文件.
 
         Args:
             use_kaggle: True 时使用 Kaggle API, False 时仅校验已存在文件
-            extract:    True 时解压 raw_dir 中的 zip 文件
+            extract:    保留兼容参数; 真实文件下载不需要解压
+            subset:     需要下载的 CT 体积对数量, None 时默认只取 1 份
         """
         if use_kaggle:
-            self._download_kaggle(extract=extract)
+            self._download_kaggle(subset=subset)
 
         if extract:
             self._extract_if_needed()
@@ -86,16 +92,66 @@ class Luna16Downloader:
     # Internal
     # --------------------------------------------------------
 
-    def _download_kaggle(self, extract: bool = True) -> None:
-        """通过 Kaggle API 下载数据集."""
-        cmd = [
-            "kaggle", "datasets", "download",
-            "-d", self.KAGGLE_DATASET,
-            "-p", str(self.raw_dir),
-        ]
-        if extract:
-            cmd.append("--unzip")
-        subprocess.run(cmd, check=True)
+    def _download_kaggle(self, subset: int | None = None) -> None:
+        """通过 Kaggle API 下载少量真实 CT 体积对."""
+        api = KaggleApi()
+        api.authenticate()
+
+        for file_name in self._select_download_files(api, subset=subset):
+            api.dataset_download_file(
+                self.KAGGLE_DATASET,
+                file_name,
+                path=str(self.raw_dir),
+                force=True,
+                quiet=True,
+            )
+
+    def _select_download_files(
+        self,
+        api: KaggleApi,
+        subset: int | None = None,
+    ) -> list[str]:
+        """挑选 annotations.csv 与前 N 份 .mhd/.raw 配对文件."""
+        file_limit = 1 if subset is None else subset
+        if file_limit < 1:
+            raise ValueError("subset must be at least 1")
+
+        selected = [self.ANNOTATIONS_FILE]
+        series_found = 0
+        page_token: str | None = None
+
+        while series_found < file_limit:
+            page = api.dataset_list_files(
+                self.KAGGLE_DATASET,
+                page_token=page_token,
+                page_size=200,
+            )
+            selected.extend(self._collect_scan_pairs(page.dataset_files, file_limit - series_found))
+            series_found = (len(selected) - 1) // 2
+            if series_found >= file_limit or not page.nextPageToken:
+                break
+            page_token = page.nextPageToken
+
+        if series_found < file_limit:
+            raise RuntimeError(
+                f"Unable to find {file_limit} LUNA16 CT pairs in dataset {self.KAGGLE_DATASET}"
+            )
+
+        return selected
+
+    @staticmethod
+    def _collect_scan_pairs(files: Iterable, remaining_pairs: int) -> list[str]:
+        """从 Kaggle 文件清单里收集 mhd/raw 配对."""
+        selected: list[str] = []
+        for file_info in files:
+            name = getattr(file_info, "name", "")
+            if not name.endswith(".mhd"):
+                continue
+            selected.append(name)
+            selected.append(name[:-4] + ".raw")
+            if len(selected) // 2 >= remaining_pairs:
+                break
+        return selected
 
     def _extract_if_needed(self) -> None:
         """解压 raw_dir 中的 zip 文件."""
@@ -167,7 +223,7 @@ def download_luna16(
         raw_dir=raw_dir,
         processed_dir=resolved_processed_dir,
     )
-    downloader.download(use_kaggle=use_kaggle, extract=extract)
+    downloader.download(use_kaggle=use_kaggle, extract=extract, subset=subset)
     return _limit_manifest(downloader.get_manifest(), subset)
 
 

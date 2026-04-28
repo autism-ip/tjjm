@@ -33,9 +33,9 @@ def sliding_window_reconstruct(
 
     # (C, D, H, W) -> (B=1, C, H, W, D) 适配 MONAI 3D 格式
     if ct_scan.dim() == 4:
-        ct_scan = ct_scan.permute(0, 2, 3, 1).unsqueeze(0)
+        ct_scan = ct_scan.unsqueeze(0)
     elif ct_scan.dim() == 3:
-        ct_scan = ct_scan.permute(1, 2, 0).unsqueeze(0).unsqueeze(0)
+        ct_scan = ct_scan.unsqueeze(0).unsqueeze(0)
 
     ct_scan = ct_scan.to(device)
 
@@ -52,5 +52,5 @@ def sliding_window_reconstruct(
 
     # (B=1, C, H, W, D) -> (C, D, H, W)
     if reconstructed.dim() == 5:
-        reconstructed = reconstructed.squeeze(0).permute(0, 3, 1, 2)
+        reconstructed = reconstructed.squeeze(0)
     return reconstructed

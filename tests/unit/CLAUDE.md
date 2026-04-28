@@ -8,7 +8,7 @@ test_dataset.py: Dataset 测试，验证 LunaCTDataset 与 LunaPatchDataset 的�
 test_detection.py: 检测层测试，验证异常图、阈值化与滑动窗口重建形状
 test_experiments.py: 实验层测试，验证健康样本统计、球形异常注入、灵敏度评估与 run/compare 聚合
 test_fusion.py: 融合层测试，验证 overlap_average_fusion 单patch/多patch重叠/边界贴边与 finalize_fusion 平均/除零/clamp/4D count_map
-test_download_api.py: 下载 API 契约测试，防止 CLI 入口与 data.download 公共函数漂移
+test_download_api.py: 下载 API 契约测试，防止 CLI 入口与 data.download 公共函数漂移，并约束只下少量真实 CT 配对
 test_losses.py: 损失函数测试，验证 WeightedMSELoss 权重计算与反向传播
 test_evaluation_metrics_core.py: 评估指标核心测试，验证 Dice/AUC/F1、连续分数阈值化与指标请求裁剪
 test_detect_entry.py: 检测入口契约测试，验证评估数组规整与旧 checkpoint 的编码器回退行为
