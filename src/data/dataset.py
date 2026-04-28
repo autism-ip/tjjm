@@ -1,5 +1,5 @@
 """
- * [INPUT]: 依赖 torch, numpy, pandas, pathlib, SimpleITK, data.preprocess
+ * [INPUT]: 依赖 torch, numpy, pandas, pathlib, SimpleITK, data.intensity, data.patches
  * [OUTPUT]: 对外提供 LunaCTDataset, LunaPatchDataset
  * [POS]: data/ 的 PyTorch Dataset 实现, 被 training/ 和 detection/ 消费
  * [PROTOCOL]: 变更时更新此头部, 然后检查 CLAUDE.md
@@ -14,12 +14,10 @@ import SimpleITK as sitk
 import torch
 from torch.utils.data import Dataset
 
-from src.data.preprocess import (
+from src.data.intensity import hu_windowing, normalize, resample_to_spacing
+from src.data.patches import (
     extract_patches,
     filter_healthy_patches,
-    hu_windowing,
-    normalize,
-    resample_to_spacing,
 )
 
 

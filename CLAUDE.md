@@ -3,7 +3,7 @@ PyTorch + MONAI + PyTorch Lightning + Hydra/OmegaConf
 
 <directory>
 src/ - 源码根，承载 src.* 包导入体系与 data/models/training/detection/evaluation/utils/experiments 七层业务模块
-src/data/ - 数据层：下载、预处理、Dataset、健康patch筛选 (4业务文件 + CLAUDE.md)
+src/data/ - 数据层：下载、强度变换、patch/坐标、Dataset、兼容预处理门面 (6业务文件 + CLAUDE.md)
 src/models/ - 模型层：SwinUNETR自编码器、权重迁移、DDPM/DDIM工具 (4业务文件 + CLAUDE.md)
 src/training/ - 训练层：Lightning Module、损失函数、回调 (4业务文件 + CLAUDE.md)
 src/detection/ - 检测层：目录推理、滑动窗口重建、异常热图、融合 (5业务文件 + CLAUDE.md)

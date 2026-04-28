@@ -1,5 +1,5 @@
 """
- * [INPUT]: 依赖 data.download, data.preprocess, data.dataset
+ * [INPUT]: 依赖 data.download, data.preprocess, data.intensity, data.patches, data.dataset
  * [OUTPUT]: 对外提供 Luna16Downloader, download_luna16, download_lidc_idri, hu_windowing, resample_to_spacing, normalize, extract_patches, filter_healthy_patches, LunaCTDataset, LunaPatchDataset
  * [POS]: data/ 包的公共接口聚合器
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
