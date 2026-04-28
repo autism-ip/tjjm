@@ -1,0 +1,30 @@
+# ============================================================
+# 异常检测推理配置
+# Hydra 运行时配置，用于 scripts/detect.py
+# ============================================================
+
+data:
+  test_ct_dir: "./data/test"
+  output_dir: "./outputs/detection"
+
+model:
+  checkpoint_path: "./checkpoints/autoencoder/best.ckpt"
+
+detection:
+  patch_size: [64, 64, 64]
+  stride: [32, 32, 32]
+  batch_size: 8
+
+evaluation:
+  threshold_method: "otsu"
+  metrics:
+    - dice
+    - auc
+    - recall
+    - precision
+    - specificity
+    - f1
+
+hydra:
+  run:
+    dir: "./outputs/detection/${now:%Y-%m-%d}/${now:%H-%M-%S}"

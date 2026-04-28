@@ -1,0 +1,49 @@
+# Data directories
+data/raw/
+data/processed/
+data/splits/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual environments
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Logs and checkpoints
+logs/
+checkpoints/
+outputs/
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Model weights
+*.pth
+*.pt
+*.ckpt
+*.safetensors
+
+# Hydra
+.hydra/
+
+# pytest
+.pytest_cache/
+.coverage
+htmlcov/

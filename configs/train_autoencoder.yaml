@@ -1,0 +1,54 @@
+# ============================================================
+# 自编码器训练配置
+# Hydra 运行时配置，用于 scripts/train_autoencoder.py
+# ============================================================
+
+data:
+  dataset_dir: "./data/processed"
+  luna16_raw_dir: "./data/raw/LUNA16"
+  hu_min: -1000
+  hu_max: 400
+  target_spacing: [1.0, 1.0, 1.0]
+  patch_size: [64, 64, 64]
+  batch_size: 4
+  num_workers: 4
+
+model:
+  encoder_name: "swin_unetr"
+  encoder_pretrained: true
+  freeze_encoder: true
+  use_checkpoint: true
+
+loss:
+  name: "weighted_mse"
+  weight_k: 5.0
+
+training:
+  max_epochs: 100
+  precision: "16-mixed"
+  accelerator: "auto"
+  devices: "auto"
+  optimizer:
+    name: "adamw"
+    lr: 1.0e-4
+    weight_decay: 1.0e-5
+  scheduler:
+    name: "cosine"
+    T_max: ${training.max_epochs}
+    eta_min: 1.0e-6
+  gradient_clip_val: 1.0
+  checkpoint_dir: "./checkpoints/autoencoder"
+
+evaluation:
+  threshold_method: "otsu"
+  metrics:
+    - dice
+    - auc
+    - recall
+    - precision
+    - specificity
+    - f1
+
+hydra:
+  run:
+    dir: "./outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}"
