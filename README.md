@@ -279,6 +279,7 @@ python scripts/run_experiments.py luna16 \
 - 正例峰值命中率 `peak_localization_rate`
 - 每病例 / 每阴性病例假阳性连通域数
 - `sweep[]` 中的 `threshold_percentile -> lesion_recall / fp_per_case`
+- `recommended` 中的自动推荐工作点，优先保留更高结节召回，其次更低假阳性
 
 如果要显式控制阈值扫描：
 
@@ -358,6 +359,7 @@ python scripts/run_experiments.py plan \
 
 - `health` 命令已经在真实检测输出上跑通
 - `luna16` 弱标注评估命令已接入真实 LUNA16 标注格式
+- `luna16` 会自动从阈值扫描里选一个推荐工作点，适合直接进实验表
 - 已生成：
   - `data/tmp-experiments/health_summary.json`
   - `data/tmp-experiments/health_summary_pretrained_strict.json`

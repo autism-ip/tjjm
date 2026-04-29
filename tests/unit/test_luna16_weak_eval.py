@@ -17,6 +17,7 @@ from src.evaluation.luna16 import (
     evaluate_luna16_case,
     evaluate_luna16_detection_dir,
     extract_seriesuid_from_path,
+    select_luna16_operating_point,
 )
 
 
@@ -112,6 +113,7 @@ def test_evaluate_luna16_detection_dir_summarizes_case_and_lesion_metrics(tmp_pa
     assert report["summary"]["case_auc"] == pytest.approx(1.0, rel=1e-6)
     assert report["summary"]["case_ap"] == pytest.approx(1.0, rel=1e-6)
     assert len(report["sweep"]) == 0
+    assert report["recommended"] is None
     assert {case["seriesuid"] for case in report["cases"]} == {positive_series, negative_series}
 
 
@@ -163,6 +165,18 @@ def test_evaluate_luna16_threshold_sweep_returns_operating_points(tmp_path):
     assert report["sweep"][0]["threshold_percentile"] == pytest.approx(90.0, rel=1e-6)
     assert "lesion_recall" in report["sweep"][0]
     assert "fp_per_case" in report["sweep"][0]
+
+
+def test_select_luna16_operating_point_prefers_recall_then_fp():
+    sweep = [
+        {"threshold_percentile": 99.0, "lesion_recall": 0.5, "fp_per_case": 10.0, "case_auc": 0.9},
+        {"threshold_percentile": 99.5, "lesion_recall": 0.5, "fp_per_case": 8.0, "case_auc": 0.9},
+        {"threshold_percentile": 99.9, "lesion_recall": 0.25, "fp_per_case": 1.0, "case_auc": 0.95},
+    ]
+
+    chosen = select_luna16_operating_point(sweep)
+
+    assert chosen["threshold_percentile"] == pytest.approx(99.5, rel=1e-6)
 
 
 def test_experiments_cli_luna16_writes_summary(tmp_path):

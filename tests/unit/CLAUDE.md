@@ -12,7 +12,7 @@ test_evaluation_metrics_core.py: 评估指标核心测试，验证 Dice/AUC/F1�
 test_experiment_protocol.py: 实验协议测试，验证研究方案、执行顺序、重复性 seed 与 CLI 导出
 test_experiments.py: 实验层测试，验证健康样本统计、球形异常注入、敏感度评估与 run/compare 聚合
 test_fusion.py: 融合层测试，验证 overlap_average_fusion 与 finalize_fusion 的重叠、边界、除零与 clamp 行为
-test_luna16_weak_eval.py: LUNA16 弱标注评估测试，验证 seriesuid 解析、单病例结节命中、目录级病例/结节汇总、阈值扫描与 luna16 CLI 子命令
+test_luna16_weak_eval.py: LUNA16 弱标注评估测试，验证 seriesuid 解析、单病例结节命中、目录级病例/结节汇总、阈值扫描、推荐工作点与 luna16 CLI 子命令
 test_losses.py: 损失函数测试，验证 WeightedMSELoss 权重计算与反向传播
 test_matplotlib_cache_env.py: Matplotlib 缓存环境测试，验证 viz/reporter/detect 导入时对项目内缓存目录的收敛
 test_preprocess.py: 预处理测试，验证 HU 窗口、重采样、归一化、patch 提取与健康筛选

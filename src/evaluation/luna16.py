@@ -1,6 +1,6 @@
 """
  * [INPUT]: 依赖 csv, pathlib, numpy, SimpleITK, sklearn.metrics, skimage.measure, src.data.patches
- * [OUTPUT]: 对外提供 load_luna16_annotations, evaluate_luna16_case, evaluate_luna16_detection_dir, evaluate_luna16_threshold_sweep
+ * [OUTPUT]: 对外提供 load_luna16_annotations, evaluate_luna16_case, evaluate_luna16_detection_dir, evaluate_luna16_threshold_sweep, select_luna16_operating_point
  * [POS]: src/evaluation/ 的 LUNA16 弱标注评估器，把结节中心直径标注映射到异常图并输出病例级、结节级与阈值扫描指标
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 """
@@ -245,6 +245,33 @@ def _summarize_case_reports(
     return summary
 
 
+def _score_operating_point(entry: dict[str, Any]) -> tuple[float, float, float, float]:
+    return (
+        float(entry.get("lesion_recall") or 0.0),
+        float(entry.get("peak_localization_rate") or 0.0),
+        float(entry.get("case_auc") or 0.0),
+        -float(entry.get("fp_per_case") or 0.0),
+    )
+
+
+def select_luna16_operating_point(
+    sweep: Sequence[dict[str, Any]],
+    *,
+    max_fp_per_case: float | None = None,
+) -> dict[str, Any] | None:
+    """从阈值扫描结果里挑一个推荐工作点。"""
+    candidates = list(sweep)
+    if max_fp_per_case is not None:
+        candidates = [
+            entry
+            for entry in candidates
+            if float(entry.get("fp_per_case") or 0.0) <= float(max_fp_per_case)
+        ]
+    if not candidates:
+        return None
+    return max(candidates, key=_score_operating_point)
+
+
 def evaluate_luna16_case(
     anomaly_map: np.ndarray,
     reference_image: sitk.Image,
@@ -333,6 +360,7 @@ def evaluate_luna16_detection_dir(
         case_contexts,
         score_percentiles=score_percentiles or (),
     )
+    recommended = select_luna16_operating_point(sweep)
 
     return {
         "annotations_path": str(annotations_path),
@@ -340,4 +368,5 @@ def evaluate_luna16_detection_dir(
         "summary": summary,
         "cases": cases,
         "sweep": sweep,
+        "recommended": recommended,
     }
