@@ -27,7 +27,7 @@ src/
 ├── models/      # SwinUNETR 自编码器、权重迁移、冻结/解冻工具
 ├── training/    # LightningModule、损失函数、训练回调
 ├── detection/   # 滑窗重建、异常图、目录级推理
-├── evaluation/  # Dice / AUC / Precision / Recall / F1 等指标与报告
+├── evaluation/  # Dice / AUC / Precision / Recall / F1，以及 LUNA16 弱标注病例/结节级指标
 ├── experiments/ # 健康统计、合成敏感度、ablation 汇总
 └── utils/       # 配置、日志、可视化
 ```
@@ -50,16 +50,17 @@ scripts/
 - 训练：GPU 已可用，真实 1 个 epoch 已跑通。
 - 预训练：本地 MONAI 官方 SSL 权重已验证可读，严格模式预训练 1 个 epoch 已跑通。
 - 检测：同一批真实 CT 已跑通目录级推理并输出热图。
-- 实验：健康统计脚本已对检测输出跑通。
+- 实验：健康统计与 LUNA16 弱标注评估脚本都已接入检测输出。
 - 依赖：当前环境使用 CUDA 版 PyTorch，GPU 可见。
 
 最近一次验证结果：
 
-- `146 passed, 5 warnings`
+- `157 passed, 5 warnings`
 - 真实训练 checkpoint 已生成
 - 严格模式预训练 checkpoint 已生成
 - 真实检测输出已落盘
 - 实验摘要已生成
+- LUNA16 弱标注病例/结节级指标已可导出
 
 ## 运行环境
 
@@ -246,6 +247,7 @@ python scripts/detect.py \
 - Hydra 的 `stride` 列表会自动收敛成可用的滑窗步长
 - 目录推理的可视化切片索引已对齐真实 CT 深度轴
 - `detect.py` 会优先使用 `torch.load(..., weights_only=True)` 安全加载 checkpoint，旧格式再兼容回退
+- 检测输出的 `anomaly.nii.gz` 现在会继承原 CT 的 `origin/spacing`，避免后续评估坐标漂移
 
 ## 流程 4: 实验
 
@@ -257,6 +259,36 @@ python scripts/detect.py \
 python scripts/run_experiments.py health \
   --input-dir ./data/tmp-detect \
   --output ./data/tmp-experiments/health_summary.json
+```
+
+### LUNA16 弱标注评估
+
+```bash
+python scripts/run_experiments.py luna16 \
+  --input-dir ./data/tmp-detect \
+  --ct-dir ./data/raw/LUNA16 \
+  --annotations ./data/raw/LUNA16/annotations.csv \
+  --output ./data/tmp-experiments/luna16_weak_eval.json
+```
+
+这个命令不假装有体素级真值，而是基于 LUNA16 的 `seriesuid + (coordX, coordY, coordZ, diameter_mm)` 输出更诚实的论文指标，并自动导出默认阈值扫描：
+
+- 病例级 `case_auc`
+- 病例级 `case_ap`
+- 结节级 `lesion_recall`
+- 正例峰值命中率 `peak_localization_rate`
+- 每病例 / 每阴性病例假阳性连通域数
+- `sweep[]` 中的 `threshold_percentile -> lesion_recall / fp_per_case`
+
+如果要显式控制阈值扫描：
+
+```bash
+python scripts/run_experiments.py luna16 \
+  --input-dir ./data/tmp-detect \
+  --ct-dir ./data/raw/LUNA16 \
+  --annotations ./data/raw/LUNA16/annotations.csv \
+  --score-percentiles 99.0 99.5 99.9 \
+  --output ./data/tmp-experiments/luna16_weak_eval.json
 ```
 
 ### 合成敏感度
@@ -325,6 +357,7 @@ python scripts/run_experiments.py plan \
 ### 已验证结论
 
 - `health` 命令已经在真实检测输出上跑通
+- `luna16` 弱标注评估命令已接入真实 LUNA16 标注格式
 - 已生成：
   - `data/tmp-experiments/health_summary.json`
   - `data/tmp-experiments/health_summary_pretrained_strict.json`
@@ -337,7 +370,7 @@ pytest -q
 
 当前仓库验证结果：
 
-- `146 passed, 5 warnings`
+- `157 passed, 5 warnings`
 
 warnings 主要来自第三方库的未来兼容提示，不是当前项目的功能错误。
 
@@ -548,6 +581,15 @@ warnings 主要来自第三方库的未来兼容提示，不是当前项目的�
 
 最近几轮不是改一小块文案，而是把真实运行链路收口了。
 
+- `3c8ac3f refactor: harden pretrained experiment pipeline`
+  - 预训练权重严格模式、本地权重路径、坏缓存重试已收口
+  - `detect.py` 已优先安全加载 checkpoint
+- 当前未提交改动
+  - 新增 `scripts/run_experiments.py luna16` 子命令
+  - 新增 LUNA16 弱标注病例/结节级评估与默认阈值扫描
+  - 检测输出现在保留原 CT 空间元数据
+  - 全量测试基线更新到 `157 passed, 5 warnings`
+  - 真实 2 例 CT 的 `luna16` 弱标注评估已跑通，当前现象是 `case_auc=1.0` 但 `lesion_recall=0.0`
 - `d8703f2 refactor: validate gpu real-data end-to-end`
   - 下载 2 份真实 CT 配对
   - CUDA 版 PyTorch 可用
@@ -560,16 +602,6 @@ warnings 主要来自第三方库的未来兼容提示，不是当前项目的�
   - `src/data` 预处理职责拆分
 - `e27d4d6 refactor: stabilize package and test runtime`
   - 包结构和测试运行环境收口
-- 当前未提交改动
-  - 预训练权重加载结果已显式化
-  - 训练配置新增 `model.pretrained_checkpoint_path`
-  - 训练配置新增 `model.pretrained_strict`
-  - 自动下载先写 `.part`，避免保留半截坏缓存
-  - 读到坏缓存时会自动删除并重试一次
-  - 本地官方权重已验证可读，严格预训练真实链路已跑通
-  - 新增严格预训练 health/compare/ablation 产物
-  - `detect.py` 已改成优先安全加载 checkpoint，消除了真实推理时的 `weights_only=False` FutureWarning
-  - README 新增目录教程、最短复现路径和预训练排障说明
 
 ## 如何维护这份 README
 

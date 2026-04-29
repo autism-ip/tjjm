@@ -1,15 +1,19 @@
 """
- * [INPUT]: 依赖 numpy, pytest, torch, detection.anomaly_map, detection.sliding_window
+ * [INPUT]: 依赖 pathlib, numpy, pytest, torch, SimpleITK, detection.anomaly_map, detection.inference, detection.sliding_window
  * [OUTPUT]: 对外提供 detection 模块的单元测试
- * [POS]: tests/unit/ 的检测层验证器，覆盖异常图 / 阈值 / 重建尺寸
+ * [POS]: tests/unit/ 的检测层验证器，覆盖异常图 / 阈值 / 重建尺寸 / 输出空间元数据
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 """
 
+from pathlib import Path
+
 import numpy as np
 import pytest
+import SimpleITK as sitk
 import torch
 
 from src.detection.anomaly_map import compute_anomaly_map, threshold_anomaly_map
+from src.detection.inference import SlidingWindowDetector
 from src.detection.sliding_window import sliding_window_reconstruct
 
 
@@ -80,3 +84,17 @@ def test_reconstruction_values_in_range():
     )
     assert reconstructed.shape == ct_scan.shape
     assert torch.isfinite(reconstructed).all()
+
+
+def test_save_nifti_preserves_reference_metadata(tmp_path: Path):
+    arr = np.zeros((4, 4, 4), dtype=np.float32)
+    reference = sitk.GetImageFromArray(np.zeros((4, 4, 4), dtype=np.float32))
+    reference.SetSpacing((0.7, 0.8, 2.5))
+    reference.SetOrigin((-10.0, 20.0, 30.0))
+
+    output_path = tmp_path / "anomaly.nii.gz"
+    SlidingWindowDetector._save_nifti(arr, output_path, reference_image=reference)
+
+    restored = sitk.ReadImage(str(output_path))
+    assert restored.GetSpacing() == pytest.approx(reference.GetSpacing(), rel=1e-6)
+    assert restored.GetOrigin() == pytest.approx(reference.GetOrigin(), rel=1e-6)

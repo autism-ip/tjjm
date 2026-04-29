@@ -19,6 +19,14 @@ experiments:
     intensities:
       - 0.5
       - 1.0
+  luna16:
+    annotations: "./data/raw/LUNA16/annotations.csv"
+    score_percentile: 99.5
+    score_percentiles:
+      - 99.0
+      - 99.5
+      - 99.9
+    min_diameter_mm: 0.0
   protocol:
     data_root: "./data/raw/LUNA16"
     download_subset: 2

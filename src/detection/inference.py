@@ -89,11 +89,21 @@ class SlidingWindowDetector:
         return {
             "anomaly_map": anomaly_map,
             "ct_volume": arr,
-            "save_fn": self._save_nifti,
+            "save_fn": lambda candidate, output_path, reference=img: self._save_nifti(
+                candidate,
+                output_path,
+                reference_image=reference,
+            ),
         }
 
     @staticmethod
-    def _save_nifti(arr: np.ndarray, path: str | Path) -> None:
-        """将 numpy array 保存为 NIfTI 格式。"""
+    def _save_nifti(
+        arr: np.ndarray,
+        path: str | Path,
+        reference_image: sitk.Image | None = None,
+    ) -> None:
+        """将 numpy array 保存为 NIfTI 格式，并尽量继承原始空间信息。"""
         img = sitk.GetImageFromArray(arr)
+        if reference_image is not None and tuple(img.GetSize()) == tuple(reference_image.GetSize()):
+            img.CopyInformation(reference_image)
         sitk.WriteImage(img, str(path))

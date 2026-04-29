@@ -33,6 +33,7 @@ from src.experiments import (
     summarize_anomaly_map_files,
     summarize_metric_reports,
 )
+from src.evaluation import evaluate_luna16_detection_dir
 
 DEFAULT_CONFIG_PATH = Path(PROJECT_ROOT) / "configs" / "experiments.yaml"
 
@@ -49,7 +50,7 @@ def load_experiment_config(config_path: str | Path | None = None) -> dict[str, A
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     """解析 experiments CLI。"""
     parser = argparse.ArgumentParser(
-        description="Run health analysis, synthetic sensitivity, experiment planning, and ablation summaries.",
+        description="Run health analysis, weak LUNA16 evaluation, synthetic sensitivity, experiment planning, and ablation summaries.",
     )
     parser.add_argument(
         "--config",
@@ -84,6 +85,15 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     compare.add_argument("--variant", type=str, required=True, help="Variant JSON metrics report.")
     compare.add_argument("--fields", nargs="*", default=None, help="Optional subset of numeric fields to compare.")
     compare.add_argument("--output", type=str, default=None, help="Output JSON path.")
+
+    luna16 = subparsers.add_parser("luna16", help="Evaluate anomaly maps against LUNA16 weak labels.")
+    luna16.add_argument("--input-dir", type=str, required=True, help="Directory containing anomaly map files.")
+    luna16.add_argument("--annotations", type=str, default=None, help="Path to LUNA16 annotations.csv.")
+    luna16.add_argument("--ct-dir", type=str, required=True, help="Directory containing reference LUNA16 .mhd files.")
+    luna16.add_argument("--output", type=str, default=None, help="Output JSON path.")
+    luna16.add_argument("--score-percentile", type=float, default=None, help="Global anomaly percentile used as positive threshold.")
+    luna16.add_argument("--score-percentiles", nargs="*", type=float, default=None, help="Optional percentile sweep for FROC-like operating points.")
+    luna16.add_argument("--min-diameter-mm", type=float, default=None, help="Ignore nodules smaller than this diameter.")
 
     plan = subparsers.add_parser("plan", help="Render the full experiment protocol as Markdown or JSON.")
     plan.add_argument("--output", type=str, default=None, help="Output file path.")
@@ -150,6 +160,37 @@ def _run_compare(args: argparse.Namespace, config: dict[str, Any]) -> dict[str, 
     return summary
 
 
+def _run_luna16(args: argparse.Namespace, config: dict[str, Any]) -> dict[str, Any]:
+    defaults = config.get("experiments", {}).get("luna16", {})
+    output_dir = config.get("experiments", {}).get("output_dir", "./outputs/experiments")
+    annotations = args.annotations or defaults.get("annotations") or str(Path(args.ct_dir) / "annotations.csv")
+    score_percentile = (
+        args.score_percentile if args.score_percentile is not None else defaults.get("score_percentile", 99.5)
+    )
+    score_percentiles = args.score_percentiles if args.score_percentiles else defaults.get(
+        "score_percentiles",
+        [99.0, 99.5, 99.9],
+    )
+    min_diameter_mm = (
+        args.min_diameter_mm if args.min_diameter_mm is not None else defaults.get("min_diameter_mm", 0.0)
+    )
+    input_paths = iter_input_paths(input_dir=args.input_dir)
+    if not input_paths:
+        raise ValueError("luna16 requires anomaly map files under --input-dir")
+
+    summary = evaluate_luna16_detection_dir(
+        anomaly_paths=input_paths,
+        annotations_path=annotations,
+        ct_dir=args.ct_dir,
+        score_percentile=score_percentile,
+        min_diameter_mm=min_diameter_mm,
+        score_percentiles=score_percentiles,
+    )
+    output_path = _resolve_output(output_dir, "luna16_weak_eval.json", args.output)
+    save_summary_text(summary, output_path)
+    return summary
+
+
 def _run_plan(args: argparse.Namespace, config: dict[str, Any]) -> dict[str, Any]:
     output_dir = config.get("experiments", {}).get("output_dir", "./outputs/experiments")
     protocol = build_experiment_protocol(config)
@@ -172,6 +213,8 @@ def main(argv: list[str] | None = None) -> dict[str, Any]:
         return _run_ablation(args, config)
     if args.command == "compare":
         return _run_compare(args, config)
+    if args.command == "luna16":
+        return _run_luna16(args, config)
     if args.command == "plan":
         return _run_plan(args, config)
     raise ValueError(f"Unknown command: {args.command}")
