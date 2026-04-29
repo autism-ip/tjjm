@@ -12,6 +12,7 @@ import numpy as np
 import pytest
 
 from src.experiments import (
+    compare_metric_reports,
     evaluate_synthetic_sensitivity,
     inject_spherical_anomaly,
     iter_input_paths,
@@ -108,6 +109,35 @@ def test_summarize_metric_reports_reads_json(tmp_path):
     assert summary["a"]["dice_mean"] == pytest.approx(0.9, rel=1e-6)
 
 
+def test_summarize_metric_reports_accepts_utf8_bom_json(tmp_path):
+    report = tmp_path / "run_bom.json"
+    report.write_text(
+        json.dumps({"run_name": "bom", "dice": 0.7, "auc": 0.8}),
+        encoding="utf-8-sig",
+    )
+
+    summary = summarize_metric_reports([report], group_key="run_name")
+
+    assert summary["bom"]["count"] == 1
+    assert summary["bom"]["dice_mean"] == pytest.approx(0.7, rel=1e-6)
+
+
+def test_compare_metric_reports_returns_deltas(tmp_path):
+    baseline = tmp_path / "baseline.json"
+    variant = tmp_path / "variant.json"
+    baseline.write_text(json.dumps({"dice": 0.8, "auc": 0.9, "loss": 0.2}), encoding="utf-8")
+    variant.write_text(json.dumps({"dice": 0.85, "auc": 0.95, "loss": 0.15}), encoding="utf-8")
+
+    summary = compare_metric_reports(baseline, variant)
+
+    assert summary["baseline_path"].endswith("baseline.json")
+    assert summary["variant_path"].endswith("variant.json")
+    assert summary["comparison"]["dice"]["baseline"] == pytest.approx(0.8, rel=1e-6)
+    assert summary["comparison"]["dice"]["variant"] == pytest.approx(0.85, rel=1e-6)
+    assert summary["comparison"]["dice"]["delta"] == pytest.approx(0.05, rel=1e-6)
+    assert summary["comparison"]["auc"]["delta_pct"] == pytest.approx((0.95 - 0.9) / 0.9, rel=1e-6)
+
+
 def test_iter_input_paths_and_load_array(tmp_path):
     arr_path = tmp_path / "sample.npy"
     np.save(arr_path, np.array([1.0], dtype=np.float32))
@@ -139,3 +169,30 @@ def test_experiments_cli_parse_and_dispatch(tmp_path, monkeypatch):
 
     assert summary["count"] == 1
     assert output_path.exists()
+
+
+def test_experiments_cli_compare_writes_summary(tmp_path):
+    from scripts import run_experiments
+
+    baseline = tmp_path / "baseline.json"
+    variant = tmp_path / "variant.json"
+    output_path = tmp_path / "compare.json"
+    baseline.write_text(json.dumps({"dice": 0.8, "auc": 0.9}), encoding="utf-8")
+    variant.write_text(json.dumps({"dice": 0.9, "auc": 0.95}), encoding="utf-8")
+
+    summary = run_experiments.main(
+        [
+            "--config",
+            str(Path("configs/experiments.yaml")),
+            "compare",
+            "--baseline",
+            str(baseline),
+            "--variant",
+            str(variant),
+            "--output",
+            str(output_path),
+        ]
+    )
+
+    assert output_path.exists()
+    assert summary["comparison"]["dice"]["delta"] == pytest.approx(0.1, rel=1e-6)

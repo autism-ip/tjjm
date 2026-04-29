@@ -16,6 +16,8 @@ data:
 model:
   encoder_name: "swin_unetr"
   encoder_pretrained: true
+  pretrained_checkpoint_path: null
+  pretrained_strict: false
   freeze_encoder: true
   use_checkpoint: true
 
@@ -28,6 +30,7 @@ training:
   precision: "16-mixed"
   accelerator: "auto"
   devices: "auto"
+  seed: 42
   optimizer:
     name: "adamw"
     lr: 1.0e-4

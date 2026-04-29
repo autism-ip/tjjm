@@ -19,3 +19,27 @@ experiments:
     intensities:
       - 0.5
       - 1.0
+  protocol:
+    data_root: "./data/raw/LUNA16"
+    download_subset: 2
+    train:
+      dataset_dir: "./data/raw/LUNA16"
+      luna16_raw_dir: "./data/raw/LUNA16"
+      batch_size: 2
+      num_workers: 2
+      max_epochs: 1
+      precision: "16-mixed"
+      accelerator: "gpu"
+      devices: 1
+      checkpoint_dir: "./data/tmp-checkpoints/gpu-smoke"
+    detect:
+      test_ct_dir: "./data/raw/LUNA16"
+      output_dir: "./data/tmp-detect"
+    experiments:
+      output_dir: "./outputs/experiments"
+    reproducibility:
+      seeds:
+        - 0
+        - 1
+        - 2
+      repeats: 3

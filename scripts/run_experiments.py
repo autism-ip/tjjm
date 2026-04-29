@@ -2,11 +2,13 @@
 # -*- coding: utf-8 -*-
 
 """
- * [INPUT]: 依赖 argparse, yaml, src.experiments 的实验分析函数
- * [OUTPUT]: 对外提供健康统计、合成异常和 ablation 汇总入口 main()
- * [POS]: scripts/ 的实验入口，面向竞赛交付的离线分析流程
+ * [INPUT]: 依赖 argparse、yaml、src.experiments 的公共接口
+ * [OUTPUT]: 对外提供健康统计、合成异常敏感性、实验协议与 ablation 汇总的 main() 函数
+ * [POS]: scripts/ 的实验入口，被 CLI 直接调用
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 """
+
+from __future__ import annotations
 
 import argparse
 import os
@@ -20,11 +22,13 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, PROJECT_ROOT)
 
 from src.experiments import (
+    build_experiment_protocol,
+    compare_metric_reports,
     evaluate_synthetic_sensitivity,
     iter_input_paths,
     load_array,
-    load_report,
     make_difference_score_fn,
+    save_experiment_protocol,
     save_summary_text,
     summarize_anomaly_map_files,
     summarize_metric_reports,
@@ -34,7 +38,7 @@ DEFAULT_CONFIG_PATH = Path(PROJECT_ROOT) / "configs" / "experiments.yaml"
 
 
 def load_experiment_config(config_path: str | Path | None = None) -> dict[str, Any]:
-    """读取实验默认配置。"""
+    """读取 experiments.yaml，缺省时返回空配置。"""
     path = Path(config_path or DEFAULT_CONFIG_PATH)
     if not path.exists():
         return {}
@@ -43,9 +47,9 @@ def load_experiment_config(config_path: str | Path | None = None) -> dict[str, A
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    """解析实验 CLI 参数。"""
+    """解析 experiments CLI。"""
     parser = argparse.ArgumentParser(
-        description="Run compact competition experiments for health analysis, synthetic sensitivity, and ablation summaries.",
+        description="Run health analysis, synthetic sensitivity, experiment planning, and ablation summaries.",
     )
     parser.add_argument(
         "--config",
@@ -74,6 +78,16 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     ablation.add_argument("--reports", nargs="+", required=True, help="JSON metrics reports to compare.")
     ablation.add_argument("--group-key", type=str, default="run_name", help="Field used to group reports.")
     ablation.add_argument("--output", type=str, default=None, help="Output JSON path.")
+
+    compare = subparsers.add_parser("compare", help="Compare one baseline report against one variant report.")
+    compare.add_argument("--baseline", type=str, required=True, help="Baseline JSON metrics report.")
+    compare.add_argument("--variant", type=str, required=True, help="Variant JSON metrics report.")
+    compare.add_argument("--fields", nargs="*", default=None, help="Optional subset of numeric fields to compare.")
+    compare.add_argument("--output", type=str, default=None, help="Output JSON path.")
+
+    plan = subparsers.add_parser("plan", help="Render the full experiment protocol as Markdown or JSON.")
+    plan.add_argument("--output", type=str, default=None, help="Output file path.")
+    plan.add_argument("--format", choices=["md", "json"], default="md", help="Output format.")
 
     return parser.parse_args(argv)
 
@@ -128,8 +142,25 @@ def _run_ablation(args: argparse.Namespace, config: dict[str, Any]) -> dict[str,
     return summary
 
 
+def _run_compare(args: argparse.Namespace, config: dict[str, Any]) -> dict[str, Any]:
+    output_dir = config.get("experiments", {}).get("output_dir", "./outputs/experiments")
+    summary = compare_metric_reports(args.baseline, args.variant, fields=args.fields)
+    output_path = _resolve_output(output_dir, "compare_summary.json", args.output)
+    save_summary_text(summary, output_path)
+    return summary
+
+
+def _run_plan(args: argparse.Namespace, config: dict[str, Any]) -> dict[str, Any]:
+    output_dir = config.get("experiments", {}).get("output_dir", "./outputs/experiments")
+    protocol = build_experiment_protocol(config)
+    default_name = "experiment_plan.json" if args.format == "json" else "experiment_plan.md"
+    output_path = _resolve_output(output_dir, default_name, args.output)
+    save_experiment_protocol(protocol, output_path, format=args.format)
+    return protocol
+
+
 def main(argv: list[str] | None = None) -> dict[str, Any]:
-    """实验入口主函数。"""
+    """运行 experiments CLI。"""
     args = parse_args(argv)
     config = load_experiment_config(args.config)
 
@@ -139,6 +170,10 @@ def main(argv: list[str] | None = None) -> dict[str, Any]:
         return _run_synthetic(args, config)
     if args.command == "ablation":
         return _run_ablation(args, config)
+    if args.command == "compare":
+        return _run_compare(args, config)
+    if args.command == "plan":
+        return _run_plan(args, config)
     raise ValueError(f"Unknown command: {args.command}")
 
 

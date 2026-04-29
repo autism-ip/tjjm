@@ -6,11 +6,17 @@
 """
 
 from src.models.autoencoder import Autoencoder3D
-from src.models.weights import load_swin_unetr_pretrained, freeze_encoder, unfreeze_layers
+from src.models.weights import (
+    PretrainedLoadResult,
+    load_swin_unetr_pretrained,
+    freeze_encoder,
+    unfreeze_layers,
+)
 from src.models.diffusion import DDPMScheduler, DDIMSampler
 
 __all__ = [
     "Autoencoder3D",
+    "PretrainedLoadResult",
     "load_swin_unetr_pretrained",
     "freeze_encoder",
     "unfreeze_layers",

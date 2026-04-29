@@ -1,28 +1,47 @@
-# Lung-Diffusion-Anomaly - 基于3D自编码重建的无监督肺部异常检测
+# Lung-Diffusion-Anomaly - 3D 肺部异常检测系统
 PyTorch + MONAI + PyTorch Lightning + Hydra/OmegaConf
 
 <directory>
-src/ - 源码根，承载 src.* 包导入体系与 data/models/training/detection/evaluation/utils/experiments 七层业务模块
-src/data/ - 数据层：下载、强度变换、patch/坐标、Dataset、兼容预处理门面 (6业务文件 + CLAUDE.md)
-src/models/ - 模型层：SwinUNETR自编码器、权重迁移、DDPM/DDIM工具 (4业务文件 + CLAUDE.md)
-src/training/ - 训练层：Lightning Module、损失函数、回调 (4业务文件 + CLAUDE.md)
-src/detection/ - 检测层：目录推理、滑动窗口重建、异常热图、融合 (5业务文件 + CLAUDE.md)
-src/evaluation/ - 评估层：Dice/AUC等指标、报告生成 (3业务文件 + CLAUDE.md)
-src/utils/ - 工具层：配置、日志、可视化 (4业务文件 + CLAUDE.md)
-src/experiments/ - 实验层：健康样本统计、合成异常敏感性、ablation 汇总 (4业务文件 + CLAUDE.md)
-configs/ - Hydra 配置文件 (train_autoencoder.yaml, detect.yaml, experiments.yaml, CLAUDE.md)
-scripts/ - 可执行入口脚本 (train_autoencoder.py, detect.py, download_data.py, run_experiments.py, CLAUDE.md)
-tests/ - 测试套件 (unit/, integration/ + CLAUDE.md)
-docs/ - 外部资料与论文/培训文档
-.cache/ - 本地运行期缓存目录，承载 matplotlib/fontconfig 临时状态，不纳入版本契约
+src/ - 源码根，承载 `src.*` 包导入体系与 data/models/training/detection/evaluation/utils/experiments 七层业务模块
+src/data/ - 数据层，负责 LUNA16 下载、CT 预处理、Dataset、健康 patch 采样
+src/models/ - 模型层，负责 SwinUNETR 自编码器、预训练权重加载与扩散骨架
+src/training/ - 训练层，负责 LightningModule、损失函数、训练回调
+src/detection/ - 检测层，负责滑窗重建、异常热图、目录级推理与融合
+src/evaluation/ - 评估层，负责 Dice/AUC 等指标与报告生成
+src/utils/ - 工具层，负责配置加载、日志、可视化输出
+src/experiments/ - 实验层，负责健康统计、合成异常、实验协议生成与 ablation 汇总
+configs/ - Hydra 配置文件，包含训练、检测、实验和协议默认值
+scripts/ - 可执行入口脚本，包含下载、训练、检测、实验协议导出
+tests/ - 单测与集成测试，保证入口、核心模块与实验协议可复现
+docs/ - 补充文档、论文草稿、培训材料
+.cache/ - 项目内缓存目录，承接 matplotlib、fontconfig、MONAI pretrained 等运行态缓存
 </directory>
 
 <config>
-setup.py - src.* 包定义与运行时依赖声明
-requirements.txt - 开发/测试环境依赖约束
-pytest.ini - pytest 运行配置，关闭内建 tmpdir 插件并改走 tests/conftest.py 的自定义 tmp_path
-.gitignore - Python 项目标准忽略规则
+setup.py - 对齐 `src.*` 包结构的打包配置
+requirements.txt - 运行依赖
+pytest.ini - pytest 配置，关闭会污染沙箱的默认缓存行为
+.gitignore - 忽略数据、输出与本地缓存产物
 </config>
 
-法则: 极简·稳定·导航·版本精确
-[PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+<status>
+当前仓库已经验证过真实数据端到端流程：
+- 只下载了少量真实 LUNA16 CT 配对
+- CUDA 版 PyTorch 可用，GPU 可见
+- 真实 1 epoch 训练已跑通
+- 严格模式预训练 1 epoch 训练已跑通，且本地官方权重可完整加载 159 层
+- 真实目录级检测已跑通
+- 严格模式预训练目录级检测与 health 摘要已跑通
+- 健康统计与实验协议导出已跑通
+- `pytest -q` 当前基线为 `146 passed, 5 warnings`
+- 预训练权重问题已定位：当前环境到 GitHub Release 下载慢或中断时，可能留下半截 `.pth` 缓存
+- 当前权重加载器已支持显式结果返回、严格模式、本地权重路径、`.part` 临时文件下载与坏缓存自动重试
+</status>
+
+<rules>
+- 代码变了，文档必须同步。
+- 新增目录或模块，必须更新对应 CLAUDE.md。
+- 实验方案要能被代码导出，不能只写在 README 里。
+- 任何真实验证都要留下命令、产物与成功标准。
+- 预训练实验若要写入论文，必须使用显式本地权重或 `model.pretrained_strict=true`，禁止把随机初始化伪装成预训练结论。
+</rules>

@@ -1,11 +1,13 @@
 """
- * [INPUT]: 依赖 src.experiments.analysis, src.experiments.synthetic, src.experiments.io
+ * [INPUT]: 依赖 src.experiments.analysis, src.experiments.synthetic, src.experiments.io, src.experiments.protocol
  * [OUTPUT]: 对外提供实验层公共接口
- * [POS]: src/experiments/ 的入口，聚合健康统计、合成异常、汇总与输入适配函数
+ * [POS]: src/experiments/ 的入口，聚合健康统计、合成异常、协议生成、汇总与输入适配函数
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
 """
 
 from src.experiments.analysis import (
+    compare_metric_records,
+    compare_metric_reports,
     save_summary,
     save_summary_text,
     summarize_anomaly_map_files,
@@ -14,6 +16,11 @@ from src.experiments.analysis import (
     summarize_metric_reports,
 )
 from src.experiments.io import iter_input_paths, load_array, load_report
+from src.experiments.protocol import (
+    build_experiment_protocol,
+    render_experiment_protocol_markdown,
+    save_experiment_protocol,
+)
 from src.experiments.synthetic import (
     evaluate_synthetic_sensitivity,
     inject_spherical_anomaly,
@@ -24,6 +31,8 @@ from src.experiments.synthetic import (
 __all__ = [
     "save_summary",
     "save_summary_text",
+    "compare_metric_records",
+    "compare_metric_reports",
     "summarize_anomaly_map_files",
     "summarize_anomaly_maps",
     "summarize_metric_records",
@@ -31,6 +40,9 @@ __all__ = [
     "iter_input_paths",
     "load_array",
     "load_report",
+    "build_experiment_protocol",
+    "render_experiment_protocol_markdown",
+    "save_experiment_protocol",
     "evaluate_synthetic_sensitivity",
     "inject_spherical_anomaly",
     "make_difference_score_fn",

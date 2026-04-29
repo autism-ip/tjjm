@@ -41,7 +41,7 @@ def load_array(path: str | Path) -> np.ndarray:
 def load_report(path: str | Path) -> dict:
     """读取 JSON 指标报告。"""
     file_path = Path(path)
-    with open(file_path, "r", encoding="utf-8") as handle:
+    with open(file_path, "r", encoding="utf-8-sig") as handle:
         return json.load(handle)
 
 

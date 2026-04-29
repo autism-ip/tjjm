@@ -70,7 +70,7 @@ def test_detect_checkpoint_without_encoder_name_uses_supported_default(monkeypat
     monkeypatch.setattr(
         detect.torch,
         "load",
-        lambda path, map_location: {"state_dict": {"model.weight": 1}},
+        lambda path, map_location, weights_only=True: {"state_dict": {"model.weight": 1}},
     )
 
     cfg = OmegaConf.create(
@@ -96,6 +96,23 @@ def test_detect_checkpoint_without_encoder_name_uses_supported_default(monkeypat
     assert captured["pretrained"] is False
     assert captured["state_dict"] == {"weight": 1}
     assert captured["eval_called"] is True
+
+
+def test_detect_checkpoint_loader_prefers_weights_only(monkeypatch):
+    from scripts import detect
+
+    calls = []
+
+    def fake_load(path, map_location=None, weights_only=None):
+        calls.append(weights_only)
+        return {"state_dict": {"weight": 1}}
+
+    monkeypatch.setattr(detect.torch, "load", fake_load)
+
+    checkpoint = detect._load_checkpoint("model.ckpt", detect.torch.device("cpu"))
+
+    assert calls[0] is True
+    assert checkpoint == {"state_dict": {"weight": 1}}
 
 
 def test_detect_strips_lightning_model_prefix_from_state_dict():

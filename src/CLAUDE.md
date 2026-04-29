@@ -9,7 +9,7 @@ training/: 训练层，负责 LightningModule、损失函数、训练回调
 detection/: 检测层，负责滑动窗口重建、异常热图、目录级推理与融合
 evaluation/: 评估层，负责 Dice/AUC 等指标与报告生成
 utils/: 工具层，负责配置加载、日志、可视化输出
-experiments/: 实验层，负责健康统计、合成异常与 ablation 汇总
+experiments/: 实验层，负责健康统计、合成异常、实验协议生成与 ablation 汇总
 
 法则: 成员完整·一行一文件·父级链接·技术词前置
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md

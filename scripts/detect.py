@@ -97,6 +97,18 @@ def _resolve_stride(stride: Any) -> int:
     return int(stride)
 
 
+def _load_checkpoint(path: str, device: torch.device) -> dict[str, Any]:
+    """
+    先用安全模式加载 checkpoint；如果遇到旧格式，再回退到兼容模式。
+    """
+    try:
+        return torch.load(path, map_location=device, weights_only=True)
+    except TypeError:
+        return torch.load(path, map_location=device)
+    except Exception:
+        return torch.load(path, map_location=device, weights_only=False)
+
+
 @hydra.main(
     config_path="../configs",
     config_name="detect",
@@ -132,7 +144,7 @@ def main(cfg: DictConfig) -> None:
     # 2. 加载模型
     # --------------------------------------------------
     print(f"Loading checkpoint from: {cfg.model.checkpoint_path}")
-    checkpoint = torch.load(cfg.model.checkpoint_path, map_location=device)
+    checkpoint = _load_checkpoint(cfg.model.checkpoint_path, device)
     state_dict = checkpoint.get("state_dict", checkpoint)
     state_dict = _normalize_state_dict_keys(state_dict)
 

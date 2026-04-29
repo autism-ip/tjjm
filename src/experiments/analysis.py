@@ -110,6 +110,55 @@ def summarize_metric_reports(
     return summarize_metric_records(records, group_key=group_key)
 
 
+def compare_metric_records(
+    baseline: Mapping[str, Any],
+    variant: Mapping[str, Any],
+    fields: Sequence[str] | None = None,
+) -> dict[str, dict[str, float | None]]:
+    """对两个指标记录做逐字段对比，输出 delta 与 delta_pct。"""
+    if fields is None:
+        shared_fields = set(_numeric_fields([baseline], group_key="__ignored__"))
+        shared_fields &= set(_numeric_fields([variant], group_key="__ignored__"))
+        fields = sorted(shared_fields)
+
+    comparison: dict[str, dict[str, float | None]] = {}
+    for field in fields:
+        if field not in baseline or field not in variant:
+            continue
+        baseline_value = baseline[field]
+        variant_value = variant[field]
+        if not isinstance(baseline_value, (int, float, np.number)):
+            continue
+        if not isinstance(variant_value, (int, float, np.number)):
+            continue
+
+        base = float(baseline_value)
+        value = float(variant_value)
+        delta = value - base
+        comparison[field] = {
+            "baseline": base,
+            "variant": value,
+            "delta": delta,
+            "delta_pct": float(delta / abs(base)) if base != 0.0 else None,
+        }
+    return comparison
+
+
+def compare_metric_reports(
+    baseline_path: str | Path,
+    variant_path: str | Path,
+    fields: Sequence[str] | None = None,
+) -> dict[str, Any]:
+    """读取两份 JSON 报告并输出比较结果。"""
+    baseline = load_report(baseline_path)
+    variant = load_report(variant_path)
+    return {
+        "baseline_path": str(baseline_path),
+        "variant_path": str(variant_path),
+        "comparison": compare_metric_records(baseline, variant, fields=fields),
+    }
+
+
 def save_summary(summary: Mapping[str, Any], output_path: str | Path) -> None:
     """将实验摘要写入 JSON。"""
     save_report(dict(summary), output_path)

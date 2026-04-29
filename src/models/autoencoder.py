@@ -66,6 +66,7 @@ class Autoencoder3D(nn.Module):
         use_checkpoint: bool = True,
         pretrained: bool = True,
         checkpoint_path: str | None = None,
+        pretrained_strict: bool = False,
     ):
         super().__init__()
         if encoder_name != "swin_unetr":
@@ -83,7 +84,11 @@ class Autoencoder3D(nn.Module):
         )
 
         if pretrained:
-            load_swin_unetr_pretrained(self.encoder, checkpoint_path)
+            load_swin_unetr_pretrained(
+                self.encoder,
+                checkpoint_path=checkpoint_path,
+                strict=pretrained_strict,
+            )
 
         if freeze_encoder:
             from src.models.weights import freeze_encoder as _freeze_encoder

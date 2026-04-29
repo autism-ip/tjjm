@@ -7,6 +7,7 @@
 
 import os
 import warnings
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Sequence
 
@@ -26,6 +27,17 @@ SSL_PRETRAINED_URL = (
     "https://github.com/Project-MONAI/MONAI-extra-test-data/"
     "releases/download/0.8.1/ssl_pretrained_weights.pth"
 )
+
+
+@dataclass(frozen=True)
+class PretrainedLoadResult:
+    """Audit record for pretrained loading; prevents silent random fallback."""
+
+    status: str
+    source: Path | None
+    loaded_layers: int
+    not_loaded_layers: int
+    message: str
 
 
 def _resolve_pretrained_cache_path() -> Path:
@@ -54,6 +66,17 @@ def _resolve_pretrained_weights_source(
     return path if path.is_file() else None
 
 
+def _missing_checkpoint_result(checkpoint_path: str) -> PretrainedLoadResult:
+    path = Path(checkpoint_path).expanduser()
+    return PretrainedLoadResult(
+        status="missing",
+        source=path,
+        loaded_layers=0,
+        not_loaded_layers=0,
+        message=f"Pretrained checkpoint does not exist: {path}",
+    )
+
+
 def _download_pretrained_weights(local_path: Path) -> Path:
     """
     下载并缓存官方 SSL 预训练权重。
@@ -64,7 +87,11 @@ def _download_pretrained_weights(local_path: Path) -> Path:
         warnings.warn(
             f"Downloading SwinUNETR SSL pretrained weights from {SSL_PRETRAINED_URL} ..."
         )
-        download_url(SSL_PRETRAINED_URL, str(local_path))
+        temp_path = local_path.with_suffix(local_path.suffix + ".part")
+        if temp_path.exists():
+            temp_path.unlink()
+        download_url(SSL_PRETRAINED_URL, str(temp_path))
+        temp_path.replace(local_path)
 
     return local_path
 
@@ -72,7 +99,8 @@ def _download_pretrained_weights(local_path: Path) -> Path:
 def load_swin_unetr_pretrained(
     model: SwinUNETR,
     checkpoint_path: str | None = None,
-) -> None:
+    strict: bool = False,
+) -> PretrainedLoadResult:
     """
     加载 SwinUNETR 预训练权重 (encoder only).
 
@@ -84,24 +112,48 @@ def load_swin_unetr_pretrained(
     """
     local_checkpoint = _resolve_pretrained_weights_source(checkpoint_path)
     if local_checkpoint is not None:
-        _load_weights_file(model, str(local_checkpoint))
-        return
+        result = _load_weights_file(model, str(local_checkpoint))
+        return _coerce_load_result(result, local_checkpoint)
+
+    if checkpoint_path is not None:
+        result = _missing_checkpoint_result(checkpoint_path)
+        if strict:
+            raise FileNotFoundError(result.message)
+        warnings.warn(f"{result.message}. Using random initialization.")
+        return result
 
     # 尝试下载并加载官方 SSL 预训练权重
     try:
-        local_path = _download_pretrained_weights(_resolve_pretrained_cache_path())
-        _load_weights_file(model, str(local_path))
+        local_path = _resolve_pretrained_cache_path()
+        local_path = _download_pretrained_weights(local_path)
+        try:
+            result = _load_weights_file(model, str(local_path))
+        except Exception:
+            if local_path.exists():
+                local_path.unlink()
+            local_path = _download_pretrained_weights(local_path)
+            result = _load_weights_file(model, str(local_path))
+        return _coerce_load_result(result, local_path)
 
     except Exception as exc:
+        if strict:
+            raise
         warnings.warn(
             f"Failed to load pretrained weights: {exc}. "
             f"Using random initialization. "
             f"If behind a proxy, manually download {SSL_PRETRAINED_URL} "
             f"and pass checkpoint_path=<local_path>."
         )
+        return PretrainedLoadResult(
+            status="failed",
+            source=None,
+            loaded_layers=0,
+            not_loaded_layers=0,
+            message=str(exc),
+        )
 
 
-def _load_weights_file(model: SwinUNETR, path: str) -> None:
+def _load_weights_file(model: SwinUNETR, path: str) -> PretrainedLoadResult:
     """
     从本地文件加载 SSL 预训练权重.
 
@@ -119,7 +171,7 @@ def _load_weights_file(model: SwinUNETR, path: str) -> None:
     checkpoint = torch.load(path, map_location="cpu", weights_only=False)
     ssl_weights = _extract_state_dict(checkpoint)
 
-    _copy_filtered_weights(model, ssl_weights)
+    return _copy_filtered_weights(model, ssl_weights, Path(path))
 
 
 def _extract_state_dict(checkpoint: dict) -> dict:
@@ -133,7 +185,11 @@ def _extract_state_dict(checkpoint: dict) -> dict:
     return checkpoint
 
 
-def _copy_filtered_weights(model: SwinUNETR, ssl_weights: dict) -> None:
+def _copy_filtered_weights(
+    model: SwinUNETR,
+    ssl_weights: dict,
+    source: Path,
+) -> PretrainedLoadResult:
     """
     使用 MONAI 官方过滤器完成键名映射与权重拷贝。
     """
@@ -151,6 +207,28 @@ def _copy_filtered_weights(model: SwinUNETR, ssl_weights: dict) -> None:
             f"Could not load {len(not_loaded)} layers (expected for decoder/head): "
             f"{not_loaded[:5]}..."
         )
+    return PretrainedLoadResult(
+        status="loaded" if loaded else "empty",
+        source=source,
+        loaded_layers=len(loaded),
+        not_loaded_layers=len(not_loaded),
+        message=f"Loaded {len(loaded)} layers; {len(not_loaded)} layers not loaded.",
+    )
+
+
+def _coerce_load_result(
+    result: PretrainedLoadResult | None,
+    source: Path,
+) -> PretrainedLoadResult:
+    if result is not None:
+        return result
+    return PretrainedLoadResult(
+        status="loaded",
+        source=source,
+        loaded_layers=0,
+        not_loaded_layers=0,
+        message="Pretrained weights loaded by external loader.",
+    )
 
 
 # ============================================================

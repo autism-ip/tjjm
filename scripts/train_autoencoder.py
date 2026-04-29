@@ -18,7 +18,7 @@ sys.path.insert(0, PROJECT_ROOT)
 
 import hydra
 from omegaconf import DictConfig, OmegaConf
-from pytorch_lightning import Trainer, LightningDataModule
+from pytorch_lightning import LightningDataModule, Trainer, seed_everything
 from pytorch_lightning.callbacks import (
     ModelCheckpoint,
     EarlyStopping,
@@ -128,6 +128,8 @@ def main(cfg: DictConfig) -> None:
     # 1. 配置解析与日志
     # --------------------------------------------------
     OmegaConf.resolve(cfg)
+    if getattr(cfg.training, "seed", None) is not None:
+        seed_everything(int(cfg.training.seed), workers=True)
     setup_logging()
 
     print("=" * 60)
@@ -158,6 +160,8 @@ def main(cfg: DictConfig) -> None:
         feature_size=48,
         use_checkpoint=cfg.model.use_checkpoint,
         pretrained=cfg.model.encoder_pretrained,
+        checkpoint_path=cfg.model.pretrained_checkpoint_path,
+        pretrained_strict=cfg.model.pretrained_strict,
     )
 
     loss_fn = WeightedMSELoss(k=cfg.loss.weight_k)
