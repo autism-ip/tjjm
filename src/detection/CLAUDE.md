@@ -2,11 +2,11 @@
 > L2 | 父级: /CLAUDE.md
 
 成员清单
-inference.py:      高阶推理封装，SlidingWindowDetector 遍历目录做整幅重建与异常检测，并让 anomaly 输出继承原 CT 空间元数据
-sliding_window.py: 整幅 CT 分块重建入口，基于 MONAI SlidingWindowInferer 做高斯加权融合
-anomaly_map.py:    异常热图生成器，逐体素绝对差异 + Otsu/固定阈值二值化
-fusion.py:         重叠区域平均融合兜底函数，供非 MONAI 场景手动拼贴使用
-__init__.py:       入口聚合，导出 compute_anomaly_map, threshold_anomaly_map, sliding_window_reconstruct, SlidingWindowDetector
+anomaly_map.py: 异常图与连通域后处理原语，提供误差图、阈值化、组件筛除与最大组件保留。
+inference.py: `SlidingWindowDetector` 推理主入口，加载 checkpoint，执行重建，保存 anomaly 与可视化。
+sliding_window.py: 基于 MONAI SlidingWindowInferer 的分块重建逻辑。
+fusion.py: 分块融合与重叠区域平均。
+__init__.py: detection 统一导出层，暴露最小公共 API。
 
-法则: 成员完整·一行一文件·父级链接·技术词前置
+法则: 推理与后处理解耦，组件清理保持纯函数，空间元数据不丢失。
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md

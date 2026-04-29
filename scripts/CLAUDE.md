@@ -2,10 +2,10 @@
 > L2 | 父级: /CLAUDE.md
 
 成员清单
-train_autoencoder.py: Hydra 训练入口，组装 DataModule、Autoencoder3D、LightningModule、Trainer，并支持预训练权重路径、严格模式与训练 seed 固定
-detect.py: Hydra 推理入口，优先用安全模式加载 checkpoint，并对 CT 目录执行滑动窗口异常检测
-download_data.py: argparse 数据入口，默认只调度可用的 LUNA16 少量真实 CT 配对，保留 lidc-idri 选项但显式声明未实装
-run_experiments.py: argparse 实验入口，提供 health/luna16/synthetic/compare/ablation/plan 子命令，负责健康统计、LUNA16 弱标注评估与阈值扫描、推荐工作点导出、基线对比、消融汇总、合成敏感性与实验协议导出
+download_data.py: 下载少量 LUNA16 CT 与 `annotations.csv`，用于真实数据 smoke test。
+train_autoencoder.py: Hydra 训练入口，支持随机初始化与严格预训练两条链路。
+detect.py: Hydra 检测入口，安全加载 checkpoint，输出 anomaly 图与可视化。
+run_experiments.py: 实验入口，提供 `health/luna16/synthetic/compare/ablation/plan` 子命令，并把 LUNA16 后处理参数透传到评估层。
 
-法则: 成员完整·一行一文件·父级链接·技术词前置
+法则: 所有真实流程都应能从这里复现；CLI 参数名必须和配置、README 保持一致。
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md

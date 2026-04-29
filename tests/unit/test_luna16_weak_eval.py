@@ -1,8 +1,9 @@
 """
- * [INPUT]: 依赖 csv, json, pathlib, numpy, pytest, SimpleITK, src.evaluation.luna16
- * [OUTPUT]: 对外提供 LUNA16 弱标注评估测试
- * [POS]: tests/unit/ 的论文指标验证器，覆盖 seriesuid 解析、单病例命中率与目录级病例/结节汇总
+ * [INPUT]: 依赖 csv, json, pathlib, numpy, pytest, SimpleITK, scripts.run_experiments, src.evaluation.luna16
+ * [OUTPUT]: 对外提供 LUNA16 弱标注评估与 CLI 的单元测试，覆盖阈值扫描、FROC 曲线和连通域后处理
+ * [POS]: tests/unit 的论文指标回归入口，负责守住 seriesuid 解析、病例汇总和工作点导出
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
 """
 
 import csv
@@ -14,6 +15,7 @@ import pytest
 import SimpleITK as sitk
 
 from src.evaluation.luna16 import (
+    build_luna16_froc_curve,
     evaluate_luna16_case,
     evaluate_luna16_detection_dir,
     extract_seriesuid_from_path,
@@ -59,6 +61,28 @@ def test_evaluate_luna16_case_reports_hit_and_false_positive():
     assert report["peak_hits_nodule"] == 1
     assert report["fp_components"] == 1
     assert report["case_positive"] == 1
+
+
+def test_evaluate_luna16_case_postprocess_removes_small_false_positive():
+    anomaly_map = np.zeros((5, 5, 5), dtype=np.float32)
+    anomaly_map[2, 2, 2] = 1.0
+    anomaly_map[0, 0, 0] = 0.7
+
+    reference = sitk.GetImageFromArray(np.zeros((5, 5, 5), dtype=np.float32))
+    reference.SetSpacing((1.0, 1.0, 1.0))
+    reference.SetOrigin((0.0, 0.0, 0.0))
+
+    report = evaluate_luna16_case(
+        anomaly_map=anomaly_map,
+        reference_image=reference,
+        annotations=[{"coordX": 2.0, "coordY": 2.0, "coordZ": 2.0, "diameter_mm": 2.0}],
+        threshold=0.5,
+        component_min_size_voxels=2,
+    )
+
+    assert report["nodule_hits"] == 0
+    assert report["fp_components"] == 0
+    assert report["predicted_positive_voxels"] == 0
 
 
 def test_evaluate_luna16_detection_dir_summarizes_case_and_lesion_metrics(tmp_path):
@@ -113,11 +137,12 @@ def test_evaluate_luna16_detection_dir_summarizes_case_and_lesion_metrics(tmp_pa
     assert report["summary"]["case_auc"] == pytest.approx(1.0, rel=1e-6)
     assert report["summary"]["case_ap"] == pytest.approx(1.0, rel=1e-6)
     assert len(report["sweep"]) == 0
+    assert len(report["froc_curve"]) == 0
     assert report["recommended"] is None
     assert {case["seriesuid"] for case in report["cases"]} == {positive_series, negative_series}
 
 
-def test_evaluate_luna16_threshold_sweep_returns_operating_points(tmp_path):
+def test_evaluate_luna16_threshold_sweep_returns_operating_points_and_froc_curve(tmp_path):
     ct_dir = tmp_path / "ct"
     ct_dir.mkdir()
     annotations_path = tmp_path / "annotations.csv"
@@ -165,6 +190,20 @@ def test_evaluate_luna16_threshold_sweep_returns_operating_points(tmp_path):
     assert report["sweep"][0]["threshold_percentile"] == pytest.approx(90.0, rel=1e-6)
     assert "lesion_recall" in report["sweep"][0]
     assert "fp_per_case" in report["sweep"][0]
+    assert len(report["froc_curve"]) == 2
+    assert report["froc_curve"][0]["fp_per_case"] <= report["froc_curve"][1]["fp_per_case"]
+
+
+def test_build_luna16_froc_curve_sorts_by_fp():
+    sweep = [
+        {"threshold_percentile": 99.0, "threshold": 0.9, "lesion_recall": 0.4, "fp_per_case": 10.0, "fp_per_negative_case": 10.0, "peak_localization_rate": 0.0},
+        {"threshold_percentile": 99.9, "threshold": 1.2, "lesion_recall": 0.2, "fp_per_case": 2.0, "fp_per_negative_case": 2.0, "peak_localization_rate": 0.0},
+    ]
+
+    curve = build_luna16_froc_curve(sweep)
+
+    assert [point["threshold_percentile"] for point in curve] == [99.9, 99.0]
+    assert curve[0]["sensitivity"] == pytest.approx(0.2, rel=1e-6)
 
 
 def test_select_luna16_operating_point_prefers_recall_then_fp():
@@ -226,6 +265,11 @@ def test_experiments_cli_luna16_writes_summary(tmp_path):
             str(output_path),
             "--score-percentile",
             "90",
+            "--score-percentiles",
+            "90",
+            "95",
+            "--component-min-size-voxels",
+            "1",
         ]
     )
 
@@ -233,3 +277,4 @@ def test_experiments_cli_luna16_writes_summary(tmp_path):
     assert output_path.exists()
     assert report["summary"]["case_count"] == 1
     assert written["summary"]["lesion_hits"] == 1
+    assert len(written["froc_curve"]) == 2

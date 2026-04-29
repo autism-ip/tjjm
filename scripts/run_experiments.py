@@ -94,6 +94,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     luna16.add_argument("--score-percentile", type=float, default=None, help="Global anomaly percentile used as positive threshold.")
     luna16.add_argument("--score-percentiles", nargs="*", type=float, default=None, help="Optional percentile sweep for FROC-like operating points.")
     luna16.add_argument("--min-diameter-mm", type=float, default=None, help="Ignore nodules smaller than this diameter.")
+    luna16.add_argument("--component-min-size-voxels", type=int, default=None, help="Remove connected components smaller than this size before scoring.")
+    luna16.add_argument("--keep-largest-component", action="store_true", help="Keep only the largest connected component after thresholding.")
 
     plan = subparsers.add_parser("plan", help="Render the full experiment protocol as Markdown or JSON.")
     plan.add_argument("--output", type=str, default=None, help="Output file path.")
@@ -174,6 +176,14 @@ def _run_luna16(args: argparse.Namespace, config: dict[str, Any]) -> dict[str, A
     min_diameter_mm = (
         args.min_diameter_mm if args.min_diameter_mm is not None else defaults.get("min_diameter_mm", 0.0)
     )
+    component_min_size_voxels = (
+        args.component_min_size_voxels
+        if args.component_min_size_voxels is not None
+        else defaults.get("component_min_size_voxels", 0)
+    )
+    keep_largest_component = bool(
+        args.keep_largest_component or defaults.get("keep_largest_component", False)
+    )
     input_paths = iter_input_paths(input_dir=args.input_dir)
     if not input_paths:
         raise ValueError("luna16 requires anomaly map files under --input-dir")
@@ -185,6 +195,8 @@ def _run_luna16(args: argparse.Namespace, config: dict[str, Any]) -> dict[str, A
         score_percentile=score_percentile,
         min_diameter_mm=min_diameter_mm,
         score_percentiles=score_percentiles,
+        component_min_size_voxels=component_min_size_voxels,
+        keep_largest_component=keep_largest_component,
     )
     output_path = _resolve_output(output_dir, "luna16_weak_eval.json", args.output)
     save_summary_text(summary, output_path)

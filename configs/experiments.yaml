@@ -27,6 +27,8 @@ experiments:
       - 99.5
       - 99.9
     min_diameter_mm: 0.0
+    component_min_size_voxels: 0
+    keep_largest_component: false
   protocol:
     data_root: "./data/raw/LUNA16"
     download_subset: 2

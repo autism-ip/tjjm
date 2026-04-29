@@ -1,8 +1,9 @@
 """
- * [INPUT]: 依赖 pathlib, numpy, pytest, torch, SimpleITK, detection.anomaly_map, detection.inference, detection.sliding_window
- * [OUTPUT]: 对外提供 detection 模块的单元测试
- * [POS]: tests/unit/ 的检测层验证器，覆盖异常图 / 阈值 / 重建尺寸 / 输出空间元数据
+ * [INPUT]: 依赖 pathlib, numpy, pytest, torch, SimpleITK, src.detection.anomaly_map, src.detection.inference, src.detection.sliding_window
+ * [OUTPUT]: 对外提供 detection 模块的单元测试，覆盖异常图、阈值化、连通域后处理和滑窗推理
+ * [POS]: tests/unit 的 detection 回归入口，负责守住检测基础原语和空间元数据不回退
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
 """
 
 from pathlib import Path
@@ -12,17 +13,16 @@ import pytest
 import SimpleITK as sitk
 import torch
 
-from src.detection.anomaly_map import compute_anomaly_map, threshold_anomaly_map
+from src.detection.anomaly_map import (
+    compute_anomaly_map,
+    postprocess_connected_components,
+    threshold_anomaly_map,
+)
 from src.detection.inference import SlidingWindowDetector
 from src.detection.sliding_window import sliding_window_reconstruct
 
 
-# ============================================================
-# Anomaly Map Tests
-# ============================================================
-
 def test_anomaly_map_non_negative():
-    """异常图计算结果必须非负"""
     original = np.random.randn(64, 64, 64).astype(np.float32)
     reconstructed = np.random.randn(64, 64, 64).astype(np.float32)
     anomaly_map = compute_anomaly_map(original, reconstructed)
@@ -30,34 +30,58 @@ def test_anomaly_map_non_negative():
 
 
 def test_anomaly_map_zero_when_identical():
-    """原始与重建完全一致时异常图应为全零"""
     original = np.random.randn(64, 64, 64).astype(np.float32)
     anomaly_map = compute_anomaly_map(original, original)
     assert np.allclose(anomaly_map, 0.0, atol=1e-6)
 
 
 def test_threshold_binary_output():
-    """阈值处理后值只能为 0 或 1"""
     anomaly_map = np.random.rand(32, 32, 32).astype(np.float32)
     binary = threshold_anomaly_map(anomaly_map, method="otsu")
     assert set(np.unique(binary).tolist()).issubset({0, 1})
 
 
 def test_threshold_fixed_value():
-    """固定阈值按预期分割"""
     anomaly_map = np.array([0.1, 0.5, 0.9], dtype=np.float32).reshape(3, 1, 1)
     binary = threshold_anomaly_map(anomaly_map, method="fixed", threshold=0.5)
     expected = np.array([0, 0, 1], dtype=np.uint8).reshape(3, 1, 1)
     assert np.array_equal(binary, expected)
 
 
-# ============================================================
-# Sliding Window Reconstruction Tests
-# ============================================================
+def test_postprocess_connected_components_removes_small_components():
+    binary = np.zeros((4, 4, 4), dtype=np.uint8)
+    binary[0, 0, 0] = 1
+    binary[1, 1, 1] = 1
+    binary[1, 1, 2] = 1
+    binary[1, 2, 1] = 1
+
+    cleaned = postprocess_connected_components(binary, min_size_voxels=2)
+
+    assert cleaned[0, 0, 0] == 0
+    assert cleaned[1, 1, 1] == 1
+    assert int(cleaned.sum()) == 3
+
+
+def test_postprocess_connected_components_keeps_largest_component():
+    binary = np.zeros((5, 5, 5), dtype=np.uint8)
+    binary[0, 0, 0] = 1
+    binary[0, 0, 1] = 1
+    binary[3, 3, 3] = 1
+    binary[3, 3, 4] = 1
+    binary[3, 4, 3] = 1
+
+    cleaned = postprocess_connected_components(
+        binary,
+        min_size_voxels=1,
+        keep_largest_component=True,
+    )
+
+    assert int(cleaned.sum()) == 3
+    assert cleaned[3, 3, 3] == 1
+    assert cleaned[0, 0, 0] == 0
+
 
 def test_reconstruction_same_shape():
-    """重建结果与输入 CT 同尺寸"""
-
     class DummyModel(torch.nn.Module):
         def forward(self, x):
             return x
@@ -71,8 +95,6 @@ def test_reconstruction_same_shape():
 
 
 def test_reconstruction_values_in_range():
-    """重建值应在合理范围（输入归一化后约 [-1, 1]）"""
-
     class DummyModel(torch.nn.Module):
         def forward(self, x):
             return x * 0.5

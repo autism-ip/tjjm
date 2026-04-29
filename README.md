@@ -55,7 +55,7 @@ scripts/
 
 最近一次验证结果：
 
-- `157 passed, 5 warnings`
+- `162 passed, 5 warnings`
 - 真实训练 checkpoint 已生成
 - 严格模式预训练 checkpoint 已生成
 - 真实检测输出已落盘
@@ -271,6 +271,18 @@ python scripts/run_experiments.py luna16 \
   --output ./data/tmp-experiments/luna16_weak_eval.json
 ```
 
+如果要导出 FROC 风格工作点并启用连通域后处理，可以直接加：
+
+```bash
+python scripts/run_experiments.py luna16 \
+  --input-dir ./data/tmp-detect \
+  --ct-dir ./data/raw/LUNA16 \
+  --annotations ./data/raw/LUNA16/annotations.csv \
+  --score-percentiles 99.0 99.5 99.9 \
+  --component-min-size-voxels 16 \
+  --output ./data/tmp-experiments/luna16_weak_eval_post16.json
+```
+
 这个命令不假装有体素级真值，而是基于 LUNA16 的 `seriesuid + (coordX, coordY, coordZ, diameter_mm)` 输出更诚实的论文指标，并自动导出默认阈值扫描：
 
 - 病例级 `case_auc`
@@ -360,6 +372,7 @@ python scripts/run_experiments.py plan \
 - `health` 命令已经在真实检测输出上跑通
 - `luna16` 弱标注评估命令已接入真实 LUNA16 标注格式
 - `luna16` 会自动从阈值扫描里选一个推荐工作点，适合直接进实验表
+- `luna16` 现在额外导出 `froc_curve`，并支持 `--component-min-size-voxels` / `--keep-largest-component`
 - 已生成：
   - `data/tmp-experiments/health_summary.json`
   - `data/tmp-experiments/health_summary_pretrained_strict.json`
@@ -372,7 +385,7 @@ pytest -q
 
 当前仓库验证结果：
 
-- `157 passed, 5 warnings`
+- `162 passed, 5 warnings`
 
 warnings 主要来自第三方库的未来兼容提示，不是当前项目的功能错误。
 
@@ -590,7 +603,7 @@ warnings 主要来自第三方库的未来兼容提示，不是当前项目的�
   - 新增 `scripts/run_experiments.py luna16` 子命令
   - 新增 LUNA16 弱标注病例/结节级评估与默认阈值扫描
   - 检测输出现在保留原 CT 空间元数据
-  - 全量测试基线更新到 `157 passed, 5 warnings`
+  - 全量测试基线更新到 `162 passed, 5 warnings`
   - 真实 2 例 CT 的 `luna16` 弱标注评估已跑通，当前现象是 `case_auc=1.0` 但 `lesion_recall=0.0`
 - `d8703f2 refactor: validate gpu real-data end-to-end`
   - 下载 2 份真实 CT 配对

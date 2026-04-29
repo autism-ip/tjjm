@@ -1,8 +1,9 @@
 """
- * [INPUT]: 依赖 csv, pathlib, numpy, SimpleITK, sklearn.metrics, skimage.measure, src.data.patches
- * [OUTPUT]: 对外提供 load_luna16_annotations, evaluate_luna16_case, evaluate_luna16_detection_dir, evaluate_luna16_threshold_sweep, select_luna16_operating_point
- * [POS]: src/evaluation/ 的 LUNA16 弱标注评估器，把结节中心直径标注映射到异常图并输出病例级、结节级与阈值扫描指标
+ * [INPUT]: 依赖 csv, pathlib, numpy, SimpleITK, sklearn.metrics, skimage.measure, src.data.patches, src.detection.anomaly_map
+ * [OUTPUT]: 对外提供 load_luna16_annotations, evaluate_luna16_case, evaluate_luna16_detection_dir, evaluate_luna16_threshold_sweep, build_luna16_froc_curve, select_luna16_operating_point
+ * [POS]: src/evaluation 的 LUNA16 弱标注评估器，负责病例级分数、结节级召回、FROC 风格工作点与后处理对比
  * [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
+ */
 """
 
 from __future__ import annotations
@@ -14,9 +15,8 @@ from typing import Any, Sequence
 import numpy as np
 import SimpleITK as sitk
 from sklearn.metrics import average_precision_score, roc_auc_score
-from skimage.measure import label
-
 from src.data.patches import world_to_voxel
+from src.detection.anomaly_map import postprocess_connected_components
 
 
 def _load_array(path: str | Path) -> np.ndarray:
@@ -40,7 +40,7 @@ def load_luna16_annotations(
     path: str | Path,
     min_diameter_mm: float = 0.0,
 ) -> dict[str, list[dict[str, Any]]]:
-    """读取 LUNA16 annotations.csv，并按 seriesuid 分组。"""
+    """读取 LUNA16 annotations.csv 并按 seriesuid 分组。"""
     grouped: dict[str, list[dict[str, Any]]] = {}
     with open(path, "r", encoding="utf-8") as handle:
         for row in csv.DictReader(handle):
@@ -59,7 +59,7 @@ def load_luna16_annotations(
 
 
 def extract_seriesuid_from_path(path: str | Path) -> str:
-    """从 anomaly 输出文件名中恢复 seriesuid。"""
+    """从 anomaly 文件名恢复 seriesuid。"""
     name = Path(path).name
     for suffix in ("_anomaly.nii.gz", "_anomaly.nii", "_anomaly.npy", "_anomaly.npz", "_anomaly.mhd"):
         if name.endswith(suffix):
@@ -106,10 +106,21 @@ def _safe_max(values: list[float]) -> float | None:
     return float(np.max(np.asarray(values, dtype=np.float32)))
 
 
-def _false_positive_components(binary_map: np.ndarray, nodule_mask: np.ndarray) -> int:
-    outside_binary = np.logical_and(binary_map, np.logical_not(nodule_mask))
-    labeled = label(outside_binary.astype(np.uint8), connectivity=1)
-    return int(labeled.max())
+def _false_positive_components_from_labels(
+    cleaned_labels: np.ndarray,
+    kept_ids: Sequence[int],
+    nodule_mask: np.ndarray,
+) -> int:
+    if not kept_ids:
+        return 0
+
+    overlap_ids = np.unique(cleaned_labels[nodule_mask])
+    overlap_ids = overlap_ids[overlap_ids != 0]
+    if overlap_ids.size == 0:
+        return int(len(kept_ids))
+
+    overlap_set = set(int(component_id) for component_id in overlap_ids.tolist())
+    return int(sum(1 for component_id in kept_ids if int(component_id) not in overlap_set))
 
 
 def _build_case_context(
@@ -167,18 +178,32 @@ def _build_case_context(
     }
 
 
-def _evaluate_case_context(context: dict[str, Any], threshold: float) -> dict[str, Any]:
+def _evaluate_case_context(
+    context: dict[str, Any],
+    threshold: float,
+    *,
+    component_min_size_voxels: int = 0,
+    keep_largest_component: bool = False,
+) -> dict[str, Any]:
     scores = context["scores"]
     annotations = context["annotations"]
     nodule_mask = context["nodule_mask"]
+    lesion_masks = context["lesion_masks"]
     lesion_max_scores = context["lesion_max_scores"]
     lesion_mean_scores = context["lesion_mean_scores"]
     outside_scores = context["outside_scores"]
 
-    nodule_hits = sum(1 for value in lesion_max_scores if value >= threshold)
-    binary_map = scores >= float(threshold)
+    binary_map, cleaned_labels, kept_ids = postprocess_connected_components(
+        scores >= float(threshold),
+        min_size_voxels=component_min_size_voxels,
+        keep_largest_component=keep_largest_component,
+        return_labeled=True,
+    )
+    binary_map = binary_map.astype(bool)
+
+    nodule_hits = sum(1 for lesion_mask in lesion_masks if np.any(cleaned_labels[lesion_mask] > 0))
     peak_hits_nodule = bool(nodule_mask[context["peak_index"]]) if annotations else False
-    fp_components = _false_positive_components(binary_map, nodule_mask)
+    fp_components = _false_positive_components_from_labels(cleaned_labels, kept_ids, nodule_mask)
 
     return {
         "has_nodule": int(bool(annotations)),
@@ -197,6 +222,8 @@ def _evaluate_case_context(context: dict[str, Any], threshold: float) -> dict[st
         "predicted_positive_voxels": int(np.count_nonzero(binary_map)),
         "fp_components": int(fp_components),
         "threshold": float(threshold),
+        "component_min_size_voxels": int(component_min_size_voxels),
+        "keep_largest_component": bool(keep_largest_component),
     }
 
 
@@ -254,12 +281,30 @@ def _score_operating_point(entry: dict[str, Any]) -> tuple[float, float, float, 
     )
 
 
+def build_luna16_froc_curve(sweep: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
+    """把阈值扫描整理成 FROC 风格的曲线点。"""
+    curve = []
+    for entry in sorted(sweep, key=lambda item: float(item.get("fp_per_case") or 0.0)):
+        curve.append(
+            {
+                "threshold_percentile": float(entry["threshold_percentile"]),
+                "threshold": float(entry["threshold"]),
+                "sensitivity": float(entry.get("lesion_recall") or 0.0),
+                "lesion_recall": float(entry.get("lesion_recall") or 0.0),
+                "fp_per_case": float(entry.get("fp_per_case") or 0.0),
+                "fp_per_negative_case": float(entry.get("fp_per_negative_case") or 0.0),
+                "peak_localization_rate": float(entry.get("peak_localization_rate") or 0.0),
+            }
+        )
+    return curve
+
+
 def select_luna16_operating_point(
     sweep: Sequence[dict[str, Any]],
     *,
     max_fp_per_case: float | None = None,
 ) -> dict[str, Any] | None:
-    """从阈值扫描结果里挑一个推荐工作点。"""
+    """在阈值扫描结果里选出推荐工作点。"""
     candidates = list(sweep)
     if max_fp_per_case is not None:
         candidates = [
@@ -277,17 +322,28 @@ def evaluate_luna16_case(
     reference_image: sitk.Image,
     annotations: Sequence[dict[str, Any]],
     threshold: float,
+    *,
+    component_min_size_voxels: int = 0,
+    keep_largest_component: bool = False,
 ) -> dict[str, Any]:
-    """在单病例上计算 LUNA16 弱标注指标。"""
+    """评估单个病例在给定阈值下的弱标注检测表现。"""
     context = _build_case_context(anomaly_map, reference_image, annotations)
-    return _evaluate_case_context(context, threshold)
+    return _evaluate_case_context(
+        context,
+        threshold,
+        component_min_size_voxels=component_min_size_voxels,
+        keep_largest_component=keep_largest_component,
+    )
 
 
 def evaluate_luna16_threshold_sweep(
     case_contexts: Sequence[dict[str, Any]],
     score_percentiles: Sequence[float],
+    *,
+    component_min_size_voxels: int = 0,
+    keep_largest_component: bool = False,
 ) -> list[dict[str, Any]]:
-    """按多个分位数阈值扫描病例/结节级指标，形成 FROC 风格摘要。"""
+    """对多个阈值做扫描，生成 FROC 风格工作点。"""
     if not score_percentiles:
         return []
 
@@ -297,7 +353,12 @@ def evaluate_luna16_threshold_sweep(
         threshold = float(np.percentile(flat_scores, float(percentile)))
         cases = []
         for context in case_contexts:
-            report = _evaluate_case_context(context, threshold)
+            report = _evaluate_case_context(
+                context,
+                threshold,
+                component_min_size_voxels=component_min_size_voxels,
+                keep_largest_component=keep_largest_component,
+            )
             report["seriesuid"] = context["seriesuid"]
             cases.append(report)
         summary = _summarize_case_reports(
@@ -305,6 +366,8 @@ def evaluate_luna16_threshold_sweep(
             threshold=threshold,
             threshold_percentile=float(percentile),
         )
+        summary["component_min_size_voxels"] = int(component_min_size_voxels)
+        summary["keep_largest_component"] = bool(keep_largest_component)
         sweep.append(summary)
     return sweep
 
@@ -316,8 +379,10 @@ def evaluate_luna16_detection_dir(
     score_percentile: float = 99.5,
     min_diameter_mm: float = 0.0,
     score_percentiles: Sequence[float] | None = None,
+    component_min_size_voxels: int = 0,
+    keep_largest_component: bool = False,
 ) -> dict[str, Any]:
-    """对 LUNA16 检测输出目录做病例级与结节级弱标注评估。"""
+    """批量评估 anomaly map 目录，输出 summary/cases/sweep/froc_curve。"""
     if not anomaly_paths:
         raise ValueError("anomaly_paths cannot be empty")
 
@@ -348,19 +413,31 @@ def evaluate_luna16_detection_dir(
         )
         context["seriesuid"] = seriesuid
         case_contexts.append(context)
-        report = _evaluate_case_context(context, threshold)
+        report = _evaluate_case_context(
+            context,
+            threshold,
+            component_min_size_voxels=component_min_size_voxels,
+            keep_largest_component=keep_largest_component,
+        )
         report["seriesuid"] = seriesuid
         cases.append(report)
+
     summary = _summarize_case_reports(
         cases,
         threshold=threshold,
         threshold_percentile=float(score_percentile),
     )
+    summary["component_min_size_voxels"] = int(component_min_size_voxels)
+    summary["keep_largest_component"] = bool(keep_largest_component)
+
     sweep = evaluate_luna16_threshold_sweep(
         case_contexts,
         score_percentiles=score_percentiles or (),
+        component_min_size_voxels=component_min_size_voxels,
+        keep_largest_component=keep_largest_component,
     )
     recommended = select_luna16_operating_point(sweep)
+    froc_curve = build_luna16_froc_curve(sweep)
 
     return {
         "annotations_path": str(annotations_path),
@@ -368,5 +445,6 @@ def evaluate_luna16_detection_dir(
         "summary": summary,
         "cases": cases,
         "sweep": sweep,
+        "froc_curve": froc_curve,
         "recommended": recommended,
     }

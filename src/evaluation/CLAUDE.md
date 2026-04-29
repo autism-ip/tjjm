@@ -2,10 +2,10 @@
 > L2 | 父级: /CLAUDE.md
 
 成员清单
-metrics.py: 核心指标计算器，统一连续异常分数阈值化与 Dice / AUC / Recall / Precision / Specificity / F1
-reporter.py: 评估报告生成器，提供 save_report 快速 JSON 输出与 EvaluationReporter 完整报告类
-luna16.py: LUNA16 弱标注评估器，把结节中心/直径映射到异常图，输出病例级 AUC/AP、结节召回、假阳性统计、阈值扫描摘要与推荐工作点
-__init__.py: 入口聚合，导出 dice_score, compute_auc, compute_metrics, EvaluationReporter 与 LUNA16 弱标注评估接口
+metrics.py: 通用分割/检测指标，提供 Dice、AUC、Recall、Precision、F1 等计算。
+reporter.py: JSON 报告写出与结果封装。
+luna16.py: LUNA16 弱标注评估器，输出 `summary/cases/sweep/froc_curve/recommended`，支持连通域后处理参数。
+__init__.py: evaluation 统一导出层，给脚本和实验协议使用。
 
-法则: 成员完整·一行一文件·父级链接·技术词前置
+法则: 病例级分数、结节级召回、FROC 工作点分开建模；评估逻辑不反向污染检测实现。
 [PROTOCOL]: 变更时更新此头部，然后检查 CLAUDE.md
