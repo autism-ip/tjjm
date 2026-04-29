@@ -320,6 +320,86 @@ python scripts/run_experiments.py ablation \
   --output ./data/tmp-experiments/ablation_summary.json
 ```
 
+## Slurm 集群启动
+
+仓库现在有两条启动线：
+- 本地线：继续用 `python scripts/*.py ...`
+- 集群线：用 `sbatch` 提交 `scripts/slurm/run_cli.sbatch`，业务命令仍然是现有 CLI
+
+这套集群方案是按培训材料里的资源划分设计的：
+- `GPU` 分区对应 `gpu01-gpu03`，每台机器 4 张 `NVIDIA L20 48G`，适合训练和目录级检测
+- `CU` 分区对应 `cu01-cu23`，适合健康统计、对比、消融、协议导出这类 CPU 工作
+- `FAT` 分区对应 `fat01`，适合更重的结果聚合、全量评估和大内存实验
+
+### 前置准备
+
+1. 把仓库放到集群共享盘，例如培训材料里的 `/home/sourcecode`，或你自己的 `/gpfs/hpc/<user>/tjjm`。
+2. 准备好 Conda 环境，并把环境名写到 `CONDA_ENV`。
+3. 把预训练权重放到仓库内的 `.cache/monai/pretrained/ssl_pretrained_weights.pth`，或者通过 `PRETRAINED_CKPT` 指向绝对路径。
+4. 如果要把日志写到自定义目录，先在提交前建好父目录。
+
+### 通用 Slurm 启动器
+
+`scripts/slurm/run_cli.sbatch` 只做三件事：
+- 激活 Conda 环境
+- `cd` 到项目根目录
+- 执行它收到的任意 CLI 命令
+
+所以它既能跑训练，也能跑检测和实验，不需要复制多份业务脚本。
+
+### GPU 训练示例
+
+```bash
+sbatch --partition=GPU --nodes=1 --gres=gpu:1 --cpus-per-task=8 --mem=64G --time=24:00:00 \
+  scripts/slurm/run_cli.sbatch \
+  python scripts/train_autoencoder.py \
+    data.dataset_dir=/gpfs/hpc/$USER/tjjm/data/raw/LUNA16 \
+    data.luna16_raw_dir=/gpfs/hpc/$USER/tjjm/data/raw/LUNA16 \
+    data.batch_size=2 \
+    data.num_workers=4 \
+    model.encoder_pretrained=true \
+    model.pretrained_checkpoint_path=/gpfs/hpc/$USER/tjjm/.cache/monai/pretrained/ssl_pretrained_weights.pth \
+    model.pretrained_strict=true \
+    model.use_checkpoint=true \
+    training.max_epochs=1 \
+    training.precision=16-mixed \
+    training.accelerator=gpu \
+    training.devices=1 \
+    training.checkpoint_dir=/gpfs/hpc/$USER/tjjm/data/tmp-checkpoints/gpu-pretrained
+```
+
+### GPU 检测示例
+
+```bash
+sbatch --partition=GPU --nodes=1 --gres=gpu:1 --cpus-per-task=8 --mem=48G --time=12:00:00 \
+  scripts/slurm/run_cli.sbatch \
+  python scripts/detect.py \
+    data.test_ct_dir=/gpfs/hpc/$USER/tjjm/data/raw/LUNA16 \
+    data.output_dir=/gpfs/hpc/$USER/tjjm/data/tmp-detect \
+    model.checkpoint_path=/gpfs/hpc/$USER/tjjm/data/tmp-checkpoints/gpu-pretrained/final.ckpt
+```
+
+### CPU / FAT 实验示例
+
+`health`、`compare`、`ablation`、`plan` 这类实验可以先放在 `CU` 分区；如果你要聚合很多报告、跑更重的 LUNA16 结果，就切到 `FAT` 分区。
+
+```bash
+sbatch --partition=CU --nodes=1 --cpus-per-task=16 --mem=32G --time=12:00:00 \
+  scripts/slurm/run_cli.sbatch \
+  python scripts/run_experiments.py plan \
+    --output /gpfs/hpc/$USER/tjjm/outputs/experiments/experiment_plan.md
+```
+
+```bash
+sbatch --partition=FAT --nodes=1 --cpus-per-task=32 --mem=128G --time=24:00:00 \
+  scripts/slurm/run_cli.sbatch \
+  python scripts/run_experiments.py luna16 \
+    --input-dir /gpfs/hpc/$USER/tjjm/data/tmp-detect \
+    --ct-dir /gpfs/hpc/$USER/tjjm/data/raw/LUNA16 \
+    --annotations /gpfs/hpc/$USER/tjjm/data/raw/LUNA16/annotations.csv \
+    --output /gpfs/hpc/$USER/tjjm/data/tmp-experiments/luna16_weak_eval.json
+```
+
 ### 基线对比
 
 ```bash
