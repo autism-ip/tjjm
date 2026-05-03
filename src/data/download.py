@@ -10,7 +10,18 @@ from pathlib import Path
 from typing import Iterable, List, Tuple
 
 import pandas as pd
-from kaggle.api.kaggle_api_extended import KaggleApi
+
+# 延迟导入 Kaggle API，避免模块加载时触发认证
+KaggleApi = None
+
+
+def _get_kaggle_api():
+    """懒加载 Kaggle API"""
+    global KaggleApi
+    if KaggleApi is None:
+        from kaggle.api.kaggle_api_extended import KaggleApi as _KaggleApi
+        KaggleApi = _KaggleApi
+    return KaggleApi()
 
 
 __all__ = [
@@ -94,7 +105,7 @@ class Luna16Downloader:
 
     def _download_kaggle(self, subset: int | None = None) -> None:
         """通过 Kaggle API 下载少量真实 CT 体积对."""
-        api = KaggleApi()
+        api = _get_kaggle_api()
         api.authenticate()
 
         for file_name in self._select_download_files(api, subset=subset):
@@ -108,34 +119,50 @@ class Luna16Downloader:
 
     def _select_download_files(
         self,
-        api: KaggleApi,
+        api,
         subset: int | None = None,
     ) -> list[str]:
-        """挑选 annotations.csv 与前 N 份 .mhd/.raw 配对文件."""
-        file_limit = 1 if subset is None else subset
-        if file_limit < 1:
-            raise ValueError("subset must be at least 1")
-
+        """挑选 annotations.csv 与 N 份 .mhd/.raw 配对文件。subset=None 时下载全部。"""
         selected = [self.ANNOTATIONS_FILE]
-        series_found = 0
         page_token: str | None = None
 
-        while series_found < file_limit:
-            page = api.dataset_list_files(
-                self.KAGGLE_DATASET,
-                page_token=page_token,
-                page_size=200,
-            )
-            selected.extend(self._collect_scan_pairs(page.dataset_files, file_limit - series_found))
-            series_found = (len(selected) - 1) // 2
-            if series_found >= file_limit or not page.nextPageToken:
-                break
-            page_token = page.nextPageToken
-
-        if series_found < file_limit:
-            raise RuntimeError(
-                f"Unable to find {file_limit} LUNA16 CT pairs in dataset {self.KAGGLE_DATASET}"
-            )
+        if subset is not None:
+            # 下载前 N 份 CT
+            if subset < 1:
+                raise ValueError("subset must be at least 1")
+            series_found = 0
+            while series_found < subset:
+                page = api.dataset_list_files(
+                    self.KAGGLE_DATASET,
+                    page_token=page_token,
+                    page_size=200,
+                )
+                selected.extend(self._collect_scan_pairs(page.dataset_files, subset - series_found))
+                series_found = (len(selected) - 1) // 2
+                if series_found >= subset or not page.next_page_token:
+                    break
+                page_token = page.next_page_token
+            if series_found < subset:
+                raise RuntimeError(
+                    f"Unable to find {subset} LUNA16 CT pairs in dataset {self.KAGGLE_DATASET}"
+                )
+        else:
+            # 下载全部 CT 文件
+            while True:
+                page = api.dataset_list_files(
+                    self.KAGGLE_DATASET,
+                    page_token=page_token,
+                    page_size=200,
+                )
+                for file_info in page.dataset_files:
+                    name = getattr(file_info, "name", "")
+                    if name.endswith((".mhd", ".raw")):
+                        selected.append(name)
+                if not page.next_page_token:
+                    break
+                page_token = page.next_page_token
+            # 去重（annotations.csv 已在首位）
+            selected = list(dict.fromkeys(selected))
 
         return selected
 

@@ -55,6 +55,7 @@ class LungPatchDataModule(LightningDataModule):
         batch_size: int,
         num_workers: int,
         val_ratio: float = 0.1,
+        stride: int = 32,
     ):
         super().__init__()
         self.dataset_dir = Path(dataset_dir)
@@ -66,6 +67,7 @@ class LungPatchDataModule(LightningDataModule):
         self.batch_size = batch_size
         self.num_workers = num_workers
         self.val_ratio = val_ratio
+        self.stride = stride
 
     def setup(self, stage: str | None = None):
         annotations_csv = self.luna16_raw_dir / "annotations.csv"
@@ -73,7 +75,7 @@ class LungPatchDataModule(LightningDataModule):
             ct_dir=self.dataset_dir,
             annotations_csv=annotations_csv,
             patch_size=self.patch_size,
-            stride=32,
+            stride=self.stride,
             hu_min=self.hu_min,
             hu_max=self.hu_max,
             target_spacing=self.target_spacing,
@@ -149,6 +151,7 @@ def main(cfg: DictConfig) -> None:
         patch_size=cfg.data.patch_size,
         batch_size=cfg.data.batch_size,
         num_workers=cfg.data.num_workers,
+        stride=cfg.data.get("patch_stride", 32),
     )
 
     # --------------------------------------------------
@@ -194,13 +197,21 @@ def main(cfg: DictConfig) -> None:
         save_last=True,
     )
 
-    early_stop_callback = EarlyStopping(
-        monitor="val_loss",
-        patience=10,
-        mode="min",
-    )
-
     lr_monitor = LearningRateMonitor(logging_interval="epoch")
+
+    # 早停策略 - 从配置读取
+    early_stop_cfg = cfg.training.get("early_stopping", {})
+    if early_stop_cfg.get("enabled", True):
+        early_stop_callback = EarlyStopping(
+            monitor=early_stop_cfg.get("monitor", "val_loss"),
+            patience=early_stop_cfg.get("patience", 10),
+            mode=early_stop_cfg.get("mode", "min"),
+            min_delta=early_stop_cfg.get("min_delta", 0.0001),
+            verbose=True,
+        )
+        callbacks = [checkpoint_callback, early_stop_callback, lr_monitor]
+    else:
+        callbacks = [checkpoint_callback, lr_monitor]
 
     tb_logger = TensorBoardLogger(
         save_dir=os.path.join(cfg.training.checkpoint_dir, "tb_logs"),
@@ -213,7 +224,7 @@ def main(cfg: DictConfig) -> None:
         accelerator=cfg.training.accelerator,
         devices=cfg.training.devices,
         gradient_clip_val=cfg.training.gradient_clip_val,
-        callbacks=[checkpoint_callback, early_stop_callback, lr_monitor],
+        callbacks=callbacks,
         logger=tb_logger,
         enable_progress_bar=True,
     )

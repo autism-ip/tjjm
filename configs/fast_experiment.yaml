@@ -1,18 +1,18 @@
-# ============================================================
-# 自编码器训练配置
-# Hydra 运行时配置，用于 scripts/train_autoencoder.py
-# ============================================================
+# 快速实验配置 - 12小时内完成
+# 核心策略: 减少数据量 + 增大batch + 早停 + 缓存
 
 data:
-  dataset_dir: "./data/processed"
+  dataset_dir: "./data/raw/LUNA16"
   luna16_raw_dir: "./data/raw/LUNA16"
   hu_min: -1000
   hu_max: 400
   target_spacing: [1.0, 1.0, 1.0]
   patch_size: [64, 64, 64]
-  patch_stride: 64
-  batch_size: 4
-  num_workers: 4
+  patch_stride: 64          # 增大stride减少patch数
+  batch_size: 16            # 增大batch size
+  num_workers: 8            # 增加workers
+  max_ct_files: 100         # 只使用100个CT
+  cache_preprocessed: true  # 缓存预处理结果
 
 model:
   encoder_name: "swin_unetr"
@@ -27,10 +27,10 @@ loss:
   weight_k: 5.0
 
 training:
-  max_epochs: 100
+  max_epochs: 50            # 减少epoch数
   precision: "16-mixed"
-  accelerator: "auto"
-  devices: "auto"
+  accelerator: "gpu"
+  devices: 1
   seed: 42
   optimizer:
     name: "adamw"
@@ -38,16 +38,16 @@ training:
     weight_decay: 1.0e-5
   scheduler:
     name: "cosine"
-    T_max: ${training.max_epochs}
+    T_max: 50
     eta_min: 1.0e-6
   gradient_clip_val: 1.0
-  checkpoint_dir: "./checkpoints/autoencoder"
+  checkpoint_dir: "./checkpoints/fast_experiment"
   early_stopping:
     enabled: true
-    patience: 10
+    patience: 5             # 更激进的早停
     monitor: "val_loss"
     mode: "min"
-    min_delta: 0.0001
+    min_delta: 0.001
 
 evaluation:
   threshold_method: "otsu"
@@ -56,16 +56,11 @@ evaluation:
     - auc
     - recall
     - precision
-    - specificity
-    - f1
 
 data_collection:
   enabled: true
-  output_dir: "./outputs/metrics/training"
-  log_every_n_steps: 10
-  save_checkpoints: true
-  save_reconstructions: true
-  save_gradient_stats: true
+  output_dir: "./outputs/metrics/fast_experiment"
+  log_every_n_steps: 50
 
 hydra:
   run:

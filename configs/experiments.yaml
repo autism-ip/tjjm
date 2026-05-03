@@ -37,11 +37,17 @@ experiments:
       luna16_raw_dir: "./data/raw/LUNA16"
       batch_size: 2
       num_workers: 2
-      max_epochs: 1
+      max_epochs: 100
       precision: "16-mixed"
       accelerator: "gpu"
       devices: 1
       checkpoint_dir: "./data/tmp-checkpoints/gpu-smoke"
+      early_stopping:
+        enabled: true
+        patience: 10
+        monitor: "val_loss"
+        mode: "min"
+        min_delta: 0.0001
     detect:
       test_ct_dir: "./data/raw/LUNA16"
       output_dir: "./data/tmp-detect"
@@ -53,3 +59,113 @@ experiments:
         - 1
         - 2
       repeats: 3
+  data_collection:
+    enabled: true
+    output_dir: "./outputs/metrics/experiments"
+    save_synthetic_details: true
+    save_ablation_details: true
+    save_comparison_details: true
+    save_robustness_details: true
+    save_efficiency_details: true
+
+  # ============================================================
+  # 对比实验配置
+  # ============================================================
+  comparison:
+    baselines:
+      - name: "random"
+        description: "随机异常图下限参考"
+        checkpoint: null
+      - name: "intensity_threshold"
+        description: "固定HU阈值检测"
+        hu_threshold: -300
+      - name: "ae_no_pretrain"
+        description: "随机初始化编码器"
+        checkpoint: "./checkpoints/ablation/ae_no_pretrain.ckpt"
+      - name: "ae_pretrained"
+        description: "SwinUNETR SSL预训练"
+        checkpoint: "./checkpoints/autoencoder/best.ckpt"
+      - name: "ae_sliding_window"
+        description: "主方法+滑窗推理"
+        checkpoint: "./checkpoints/autoencoder/best.ckpt"
+        sliding_window: true
+      - name: "ae_postprocess"
+        description: "主方法+连通域后处理"
+        checkpoint: "./checkpoints/autoencoder/best.ckpt"
+        postprocess: true
+        min_voxels: 50
+
+  # ============================================================
+  # 消融实验配置
+  # ============================================================
+  ablation:
+    encoder:
+      options: ["swin_unetr", "resnet", "vit"]
+      default: "swin_unetr"
+    loss:
+      options: ["weighted_mse", "mse", "ssim"]
+      default: "weighted_mse"
+    patch_size:
+      options: [32, 64, 128]
+      default: 64
+    overlap:
+      options: [0.25, 0.5, 0.75]
+      default: 0.5
+    pretrained:
+      options: ["random", "imagenet", "swin_ssl"]
+      default: "swin_ssl"
+    freeze:
+      options: [true, false]
+      default: true
+    decoder_layers:
+      options: [2, 3, 4]
+      default: 4
+
+  # ============================================================
+  # 敏感性实验配置
+  # ============================================================
+  sensitivity:
+    synthetic:
+      radii: [4, 6, 8, 12, 16]
+      intensities: [0.3, 0.5, 1.0, 2.0]
+      shapes: ["sphere", "cube"]
+      centers: ["center", "random"]
+    threshold:
+      percentiles: [99.0, 99.5, 99.9]
+      methods: ["otsu", "fixed"]
+    postprocess:
+      min_voxels_list: [0, 10, 50, 100]
+      keep_largest_options: [true, false]
+
+  # ============================================================
+  # 复现性实验配置
+  # ============================================================
+  reproducibility:
+    seeds: [0, 1, 2]
+    repeats_per_seed: 3
+    total_runs: 9
+    max_variance_threshold: 0.05
+
+  # ============================================================
+  # 鲁棒性实验配置
+  # ============================================================
+  robustness:
+    data_ratio:
+      options: [0.25, 0.5, 0.75, 1.0]
+    noise:
+      sigma_list: [0.01, 0.05, 0.1]
+    spacing:
+      options: [0.5, 1.0, 2.0]
+    hu_window:
+      options:
+        - [-1000, 400]
+        - [-1000, 200]
+        - [-500, 400]
+
+  # ============================================================
+  # 效率实验配置
+  # ============================================================
+  efficiency:
+    batch_sizes: [1, 2, 4, 8]
+    patch_sizes: [32, 64, 128]
+    precisions: ["32", "16-mixed"]

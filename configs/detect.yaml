@@ -25,6 +25,12 @@ evaluation:
     - specificity
     - f1
 
+data_collection:
+  enabled: true
+  output_dir: "./outputs/metrics/detection"
+  save_anomaly_maps: true
+  save_processing_stats: true
+
 hydra:
   run:
     dir: "./outputs/detection/${now:%Y-%m-%d}/${now:%H-%M-%S}"
